@@ -104,7 +104,7 @@ public class ParquetReader<T> implements Closeable {
     this(conf, file, readSupport, FilterCompat.get(unboundRecordFilter));
   }
 
-  private ParquetReader(Configuration conf,
+  public ParquetReader(Configuration conf,
                         Path file,
                         ReadSupport<T> readSupport,
                         FilterCompat.Filter filter) throws IOException {
