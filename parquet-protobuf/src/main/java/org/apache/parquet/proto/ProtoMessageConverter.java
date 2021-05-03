@@ -209,35 +209,38 @@ class ProtoMessageConverter extends GroupConverter {
       case INT: return new ProtoIntConverter(pvc);
       case LONG: return new ProtoLongConverter(pvc);
       case MESSAGE: {
+        if (parquetType.isPrimitive()) {
+          // if source is a Primitive type yet target is MESSAGE, it's probably a wrapped message
+          String typeName = fieldDescriptor.getMessageType().getFullName();
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_DOUBLE_TYPE)) {
+            return new ProtoDoubleValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_FLOAT_TYPE)) {
+            return new ProtoFloatValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT64_TYPE)) {
+            return new ProtoInt64ValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT64_TYPE)) {
+            return new ProtoUInt64ValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT32_TYPE)) {
+            return new ProtoInt32ValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT32_TYPE)) {
+            return new ProtoUInt32ValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BOOL_TYPE)) {
+            return new ProtoBoolValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_STRING_TYPE)) {
+            return new ProtoStringValueConverter(pvc);
+          }
+          if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BYTES_TYPE)) {
+            return new ProtoBytesValueConverter(pvc);
+          }
+        }
         Message.Builder subBuilder = parentBuilder.newBuilderForField(fieldDescriptor);
-        String typeName = fieldDescriptor.getMessageType().getFullName();
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_DOUBLE_TYPE)) {
-          return new ProtoDoubleValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_FLOAT_TYPE)) {
-          return new ProtoFloatValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT64_TYPE)) {
-          return new ProtoInt64ValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT64_TYPE)) {
-          return new ProtoUInt64ValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT32_TYPE)) {
-          return new ProtoInt32ValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT32_TYPE)) {
-          return new ProtoUInt32ValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BOOL_TYPE)) {
-          return new ProtoBoolValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_STRING_TYPE)) {
-          return new ProtoStringValueConverter(pvc);
-        }
-        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BYTES_TYPE)) {
-          return new ProtoBytesValueConverter(pvc);
-        }
         return new ProtoMessageConverter(conf, pvc, subBuilder, parquetType.asGroupType(), extraMetadata);
       }
     }
