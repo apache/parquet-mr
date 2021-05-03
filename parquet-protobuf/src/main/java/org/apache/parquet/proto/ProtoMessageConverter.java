@@ -18,12 +18,12 @@
  */
 package org.apache.parquet.proto;
 
-import com.google.protobuf.ByteString;
-import com.google.protobuf.Descriptors;
-import com.google.protobuf.Message;
+import com.google.protobuf.*;
+import com.google.protobuf.util.Timestamps;
 import com.twitter.elephantbird.util.Protobufs;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.column.Dictionary;
+import org.apache.parquet.example.data.simple.BooleanValue;
 import org.apache.parquet.hadoop.BadConfigurationException;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.ParquetDecodingException;
@@ -38,6 +38,8 @@ import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -165,6 +167,21 @@ class ProtoMessageConverter extends GroupConverter {
       public Optional<Converter> visit(LogicalTypeAnnotation.MapLogicalTypeAnnotation mapLogicalType) {
         return of(new MapConverter(parentBuilder, fieldDescriptor, parquetType));
       }
+
+      @Override
+      public Optional<Converter> visit(LogicalTypeAnnotation.TimestampLogicalTypeAnnotation timestampLogicalType) {
+        return of(new ProtoTimestampConverter(parent, timestampLogicalType));
+      }
+
+      @Override
+      public Optional<Converter> visit(LogicalTypeAnnotation.DateLogicalTypeAnnotation dateLogicalType) {
+        return of(new ProtoDateConverter(parent));
+      }
+
+      @Override
+      public Optional<Converter> visit(LogicalTypeAnnotation.TimeLogicalTypeAnnotation timeLogicalType) {
+        return of(new ProtoTimeConverter(parent, timeLogicalType));
+      }
     }).orElseGet(() -> newScalarConverter(parent, parentBuilder, fieldDescriptor, parquetType));
   }
 
@@ -183,6 +200,34 @@ class ProtoMessageConverter extends GroupConverter {
       case LONG: return new ProtoLongConverter(pvc);
       case MESSAGE: {
         Message.Builder subBuilder = parentBuilder.newBuilderForField(fieldDescriptor);
+        String typeName = fieldDescriptor.getMessageType().getFullName();
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_DOUBLE_TYPE)) {
+          return new ProtoDoubleValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_FLOAT_TYPE)) {
+          return new ProtoFloatValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT64_TYPE)) {
+          return new ProtoInt64ValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT64_TYPE)) {
+          return new ProtoUInt64ValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT32_TYPE)) {
+          return new ProtoInt32ValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT32_TYPE)) {
+          return new ProtoUInt32ValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BOOL_TYPE)) {
+          return new ProtoBoolValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_STRING_TYPE)) {
+          return new ProtoStringValueConverter(pvc);
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BYTES_TYPE)) {
+          return new ProtoBytesValueConverter(pvc);
+        }
         return new ProtoMessageConverter(conf, pvc, subBuilder, parquetType.asGroupType(), extraMetadata);
       }
     }
@@ -425,6 +470,218 @@ class ProtoMessageConverter extends GroupConverter {
       parent.add(str);
     }
 
+  }
+
+  final class ProtoTimestampConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+    final LogicalTypeAnnotation.TimestampLogicalTypeAnnotation logicalTypeAnnotation;
+
+    public ProtoTimestampConverter(ParentValueContainer parent, LogicalTypeAnnotation.TimestampLogicalTypeAnnotation logicalTypeAnnotation) {
+      this.parent = parent;
+      this.logicalTypeAnnotation = logicalTypeAnnotation;
+    }
+
+    @Override
+    public void addLong(long value) {
+      switch (logicalTypeAnnotation.getUnit()) {
+        case MICROS:
+          parent.add(Timestamps.fromMicros(value));
+          break;
+        case MILLIS:
+          parent.add(Timestamps.fromMillis(value));
+          break;
+        case NANOS:
+          parent.add(Timestamps.fromNanos(value));
+          break;
+      }
+    }
+  }
+
+  final class ProtoDateConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoDateConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addInt(int value) {
+      LocalDate localDate = LocalDate.ofEpochDay(value);
+      com.google.type.Date date = com.google.type.Date.newBuilder()
+        .setYear(localDate.getYear())
+        .setMonth(localDate.getMonthValue())
+        .setDay(localDate.getDayOfMonth())
+        .build();
+      parent.add(date);
+    }
+  }
+
+  final class ProtoTimeConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+    final LogicalTypeAnnotation.TimeLogicalTypeAnnotation logicalTypeAnnotation;
+
+    public ProtoTimeConverter(ParentValueContainer parent, LogicalTypeAnnotation.TimeLogicalTypeAnnotation logicalTypeAnnotation) {
+      this.parent = parent;
+      this.logicalTypeAnnotation = logicalTypeAnnotation;
+    }
+
+    @Override
+    public void addLong(long value) {
+      LocalTime localTime;
+      switch (logicalTypeAnnotation.getUnit()) {
+        case MILLIS:
+          localTime = LocalTime.ofNanoOfDay(value * 1_000_000);
+          break;
+        case MICROS:
+          localTime = LocalTime.ofNanoOfDay(value * 1_000);
+          break;
+        case NANOS:
+          localTime = LocalTime.ofNanoOfDay(value);
+          break;
+        default:
+          throw new IllegalArgumentException("Unrecognized TimeUnit: " + logicalTypeAnnotation.getUnit());
+      }
+      com.google.type.TimeOfDay timeOfDay = com.google.type.TimeOfDay.newBuilder()
+        .setHours(localTime.getHour())
+        .setMinutes(localTime.getMinute())
+        .setSeconds(localTime.getSecond())
+        .setNanos(localTime.getNano())
+        .build();
+      parent.add(timeOfDay);
+    }
+  }
+
+  final class ProtoDoubleValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoDoubleValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addDouble(double value) {
+      parent.add(DoubleValue.of(value));
+    }
+  }
+
+  final class ProtoFloatValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoFloatValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addFloat(float value) {
+      parent.add(FloatValue.of(value));
+    }
+  }
+
+  final class ProtoInt64ValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoInt64ValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addLong(long value) {
+      parent.add(Int64Value.of(value));
+    }
+  }
+
+  final class ProtoUInt64ValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoUInt64ValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addLong(long value) {
+      parent.add(UInt64Value.of(value));
+    }
+  }
+
+  final class ProtoInt32ValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoInt32ValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addInt(int value) {
+      parent.add(Int32Value.of(value));
+    }
+  }
+
+  final class ProtoUInt32ValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoUInt32ValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addLong(long value) {
+      parent.add(UInt32Value.of((int) value));
+    }
+  }
+
+  final class ProtoBoolValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoBoolValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    final public void addBoolean(boolean value) {
+      parent.add(BoolValue.of(value));
+    }
+
+  }
+
+  final class ProtoStringValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoStringValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addBinary(Binary binary) {
+      String str = binary.toStringUsingUTF8();
+      parent.add(StringValue.of(str));
+    }
+
+  }
+
+  final class ProtoBytesValueConverter extends PrimitiveConverter {
+
+    final ParentValueContainer parent;
+
+    public ProtoBytesValueConverter(ParentValueContainer parent) {
+      this.parent = parent;
+    }
+
+    @Override
+    public void addBinary(Binary binary) {
+      ByteString byteString = ByteString.copyFrom(binary.toByteBuffer());
+      parent.add(BytesValue.of(byteString));
+    }
   }
 
   /**

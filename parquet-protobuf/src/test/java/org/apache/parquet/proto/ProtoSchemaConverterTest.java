@@ -32,16 +32,20 @@ public class ProtoSchemaConverterTest {
   /**
    * Converts given pbClass to parquet schema and compares it with expected parquet schema.
    */
-  private void testConversion(Class<? extends Message> pbClass, String parquetSchemaString, boolean parquetSpecsCompliant) throws
+  private void testConversion(Class<? extends Message> pbClass, String parquetSchemaString, boolean parquetSpecsCompliant, boolean unwrapWrappers) throws
           Exception {
-    ProtoSchemaConverter protoSchemaConverter = new ProtoSchemaConverter(parquetSpecsCompliant);
+    ProtoSchemaConverter protoSchemaConverter = new ProtoSchemaConverter(parquetSpecsCompliant, unwrapWrappers);
     MessageType schema = protoSchemaConverter.convert(pbClass);
     MessageType expectedMT = MessageTypeParser.parseMessageType(parquetSchemaString);
     assertEquals(expectedMT.toString(), schema.toString());
   }
 
+  private void testConversion(Class<? extends Message> pbClass, String parquetSchemaString, boolean parquetSpecsCompliant) throws Exception {
+    testConversion(pbClass, parquetSchemaString, parquetSpecsCompliant, false);
+  }
+
   private void testConversion(Class<? extends Message> pbClass, String parquetSchemaString) throws Exception {
-    testConversion(pbClass, parquetSchemaString, true);
+    testConversion(pbClass, parquetSchemaString, true, false);
   }
 
   /**
@@ -340,6 +344,60 @@ public class ProtoSchemaConverterTest {
         "  }\n" +
         "}";
 
-    testConversion(TestProto3.MapIntMessage.class, expectedSchema, false);
+    testConversion(TestProto3.MapIntMessage.class, expectedSchema, false, false);
+  }
+
+  @Test
+  public void testProto3ConvertDateTimeMessageWrapped() throws Exception {
+    String expectedSchema =
+      "message TestProto3.DateTimeMessage {\n" +
+        "  optional group timestamp = 1 {\n" +
+        "    optional int64 seconds = 1;\n" +
+        "    optional int32 nanos = 2;\n" +
+        "  }\n" +
+        "  optional group date = 2 {\n" +
+        "    optional int32 year = 1;\n" +
+        "    optional int32 month = 2;\n" +
+        "    optional int32 day = 3;\n" +
+        "  }\n" +
+        "  optional group time = 3 {\n" +
+        "    optional int32 hours = 1;\n" +
+        "    optional int32 minutes = 2;\n" +
+        "    optional int32 seconds = 3;\n" +
+        "    optional int32 nanos = 4;\n" +
+        "  }\n" +
+        "}";
+
+    testConversion(TestProto3.DateTimeMessage.class, expectedSchema, false, false);
+  }
+
+  @Test
+  public void testProto3ConvertDateTimeMessageUnwrapped() throws Exception {
+    String expectedSchema =
+      "message TestProto3.DateTimeMessage {\n" +
+        "  optional int64 timestamp (TIMESTAMP(MILLIS,true)) = 1;\n" +
+        "  optional int32 date (DATE) = 2;\n" +
+        "  optional int64 time (TIME(NANOS,true)) = 3;\n" +
+        "}";
+
+    testConversion(TestProto3.DateTimeMessage.class, expectedSchema, false, true);
+  }
+
+  @Test
+  public void testProto3ConvertWrappedMessageUnwrapped() throws Exception {
+    String expectedSchema =
+      "message TestProto3.WrappedMessage {\n" +
+        "  optional double wrappedDouble = 1;\n" +
+        "  optional float wrappedFloat = 2;\n" +
+        "  optional int64 wrappedInt64 = 3;\n" +
+        "  optional int64 wrappedUInt64 = 4;\n" +
+        "  optional int32 wrappedInt32 = 5;\n" +
+        "  optional int64 wrappedUInt32 = 6;\n" +
+        "  optional boolean wrappedBool = 7;\n" +
+        "  optional binary wrappedString (UTF8) = 8;\n" +
+        "  optional binary wrappedBytes = 9;\n" +
+        "}";
+
+    testConversion(TestProto3.WrappedMessage.class, expectedSchema, false, true);
   }
 }

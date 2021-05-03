@@ -21,6 +21,7 @@ package org.apache.parquet.proto;
 import com.google.protobuf.*;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.util.Timestamps;
 import com.twitter.elephantbird.util.Protobufs;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.hadoop.BadConfigurationException;
@@ -34,6 +35,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Array;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.*;
 
 import static java.util.Optional.ofNullable;
@@ -55,7 +58,10 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
   // but is set to false by default to keep backward compatibility
   public static final String PB_SPECS_COMPLIANT_WRITE = "parquet.proto.writeSpecsCompliant";
 
+  public static final String PB_UNWRAP_PROTO_WRAPPERS = "parquet.proto.unwrapProtoWrappers";
+
   private boolean writeSpecsCompliant = false;
+  private boolean unwrapProtoWrappers = false;
   private RecordConsumer recordConsumer;
   private Class<? extends Message> protoMessage;
   private MessageWriter messageWriter;
@@ -87,6 +93,10 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
    */
   public static void setWriteSpecsCompliant(Configuration configuration, boolean writeSpecsCompliant) {
     configuration.setBoolean(PB_SPECS_COMPLIANT_WRITE, writeSpecsCompliant);
+  }
+
+  public static void setUnwrapProtoWrappers(Configuration configuration, boolean unwrapProtoWrappers) {
+    configuration.setBoolean(PB_UNWRAP_PROTO_WRAPPERS, unwrapProtoWrappers);
   }
 
   /**
@@ -126,8 +136,9 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
       }
     }
 
+    unwrapProtoWrappers = configuration.getBoolean(PB_UNWRAP_PROTO_WRAPPERS, unwrapProtoWrappers);
     writeSpecsCompliant = configuration.getBoolean(PB_SPECS_COMPLIANT_WRITE, writeSpecsCompliant);
-    MessageType rootSchema = new ProtoSchemaConverter(writeSpecsCompliant).convert(protoMessage);
+    MessageType rootSchema = new ProtoSchemaConverter(writeSpecsCompliant, unwrapProtoWrappers).convert(protoMessage);
     Descriptor messageDescriptor = Protobufs.getMessageDescriptor(protoMessage);
     validatedMapping(messageDescriptor, rootSchema);
 
@@ -137,6 +148,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     extraMetaData.put(ProtoReadSupport.PB_CLASS, protoMessage.getName());
     extraMetaData.put(ProtoReadSupport.PB_DESCRIPTOR, serializeDescriptor(protoMessage));
     extraMetaData.put(PB_SPECS_COMPLIANT_WRITE, String.valueOf(writeSpecsCompliant));
+    extraMetaData.put(PB_UNWRAP_PROTO_WRAPPERS, String.valueOf(unwrapProtoWrappers));
     return new WriteContext(rootSchema, extraMetaData);
   }
 
@@ -248,6 +260,46 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     private FieldWriter createMessageWriter(FieldDescriptor fieldDescriptor, Type type) {
       if (fieldDescriptor.isMapField() && writeSpecsCompliant) {
         return createMapWriter(fieldDescriptor, type);
+      }
+
+      if (unwrapProtoWrappers) {
+        String typeName = fieldDescriptor.getMessageType().getFullName();
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_TIMESTAMP_TYPE)) {
+          return new TimestampWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_DATE_TYPE)) {
+          return new DateWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_TIME_TYPE)) {
+          return new TimeWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_DOUBLE_TYPE)) {
+          return new DoubleValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_FLOAT_TYPE)) {
+          return new FloatValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT64_TYPE)) {
+          return new Int64ValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT64_TYPE)) {
+          return new UInt64ValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_INT32_TYPE)) {
+          return new Int32ValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_UINT32_TYPE)) {
+          return new UInt32ValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BOOL_TYPE)) {
+          return new BoolValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_STRING_TYPE)) {
+          return new StringValueWriter();
+        }
+        if (typeName.equals(ProtoSchemaConverter.PROTOBUF_BYTES_TYPE)) {
+          return new BytesValueWriter();
+        }
       }
 
       return new MessageWriter(fieldDescriptor.getMessageType(), getGroupType(type));
@@ -553,6 +605,98 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     final void writeRawValue(Object value) {
       ByteString byteString = (ByteString) value;
       Binary binary = Binary.fromConstantByteArray(byteString.toByteArray());
+      recordConsumer.addBinary(binary);
+    }
+  }
+
+  class TimestampWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      Timestamp timestamp = (Timestamp) value;
+      recordConsumer.addLong(Timestamps.toMillis(timestamp));
+    }
+  }
+
+  class DateWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      com.google.type.Date date = (com.google.type.Date) value;
+      LocalDate localDate = LocalDate.of(date.getYear(), date.getMonth(), date.getDay());
+      recordConsumer.addInteger((int) localDate.toEpochDay());
+    }
+  }
+
+  class TimeWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      com.google.type.TimeOfDay timeOfDay = (com.google.type.TimeOfDay) value;
+      LocalTime localTime = LocalTime.of(timeOfDay.getHours(), timeOfDay.getMinutes(), timeOfDay.getSeconds(), timeOfDay.getNanos());
+      recordConsumer.addLong(localTime.toNanoOfDay());
+    }
+  }
+
+  class DoubleValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addDouble(((DoubleValue) value).getValue());
+    }
+  }
+
+  class FloatValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addFloat(((FloatValue) value).getValue());
+    }
+  }
+
+  class Int64ValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addLong(((Int64Value) value).getValue());
+    }
+  }
+
+  class UInt64ValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addLong(((UInt64Value) value).getValue());
+    }
+  }
+
+  class Int32ValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addInteger(((Int32Value) value).getValue());
+    }
+  }
+
+  class UInt32ValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addLong(((UInt32Value) value).getValue());
+    }
+  }
+
+  class BoolValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      recordConsumer.addBoolean(((BoolValue) value).getValue());
+    }
+  }
+
+  class StringValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      Binary binaryString = Binary.fromString(((StringValue) value).getValue());
+      recordConsumer.addBinary(binaryString);
+    }
+  }
+
+  class BytesValueWriter extends FieldWriter {
+    @Override
+    void writeRawValue(Object value) {
+      byte[] byteArray = ((BytesValue) value).getValue().toByteArray();
+      Binary binary = Binary.fromConstantByteArray(byteArray);
       recordConsumer.addBinary(binary);
     }
   }
