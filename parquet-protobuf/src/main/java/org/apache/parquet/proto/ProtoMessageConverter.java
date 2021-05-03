@@ -18,12 +18,22 @@
  */
 package org.apache.parquet.proto;
 
-import com.google.protobuf.*;
+import com.google.protobuf.BoolValue;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.BytesValue;
+import com.google.protobuf.Descriptors;
+import com.google.protobuf.DoubleValue;
+import com.google.protobuf.FloatValue;
+import com.google.protobuf.Int32Value;
+import com.google.protobuf.Int64Value;
+import com.google.protobuf.Message;
+import com.google.protobuf.StringValue;
+import com.google.protobuf.UInt32Value;
+import com.google.protobuf.UInt64Value;
 import com.google.protobuf.util.Timestamps;
 import com.twitter.elephantbird.util.Protobufs;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.column.Dictionary;
-import org.apache.parquet.example.data.simple.BooleanValue;
 import org.apache.parquet.hadoop.BadConfigurationException;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.io.ParquetDecodingException;

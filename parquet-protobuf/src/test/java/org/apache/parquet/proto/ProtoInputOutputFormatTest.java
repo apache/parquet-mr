@@ -18,7 +18,11 @@
  */
 package org.apache.parquet.proto;
 
-import com.google.protobuf.*;
+import com.google.protobuf.BoolValue;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.DoubleValue;
+import com.google.protobuf.Message;
+import com.google.protobuf.Timestamp;
 import com.google.protobuf.util.Timestamps;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -32,7 +36,9 @@ import org.junit.Test;
 
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 
 public class ProtoInputOutputFormatTest {
