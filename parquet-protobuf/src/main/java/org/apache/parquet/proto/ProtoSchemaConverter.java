@@ -130,7 +130,7 @@ public class ProtoSchemaConverter {
       if (unwrapProtoWrappers) {
         String typeName = descriptor.getMessageType().getFullName();
         if (typeName.equals(PROTOBUF_TIMESTAMP_TYPE)) {
-          return builder.primitive(INT64, getRepetition(descriptor)).as(timestampType(true, TimeUnit.MILLIS));
+          return builder.primitive(INT64, getRepetition(descriptor)).as(timestampType(true, TimeUnit.NANOS));
         }
         if (typeName.equals(PROTOBUF_DATE_TYPE)) {
           return builder.primitive(INT32, getRepetition(descriptor)).as(dateType());

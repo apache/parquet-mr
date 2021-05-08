@@ -375,7 +375,7 @@ public class ProtoSchemaConverterTest {
   public void testProto3ConvertDateTimeMessageUnwrapped() throws Exception {
     String expectedSchema =
       "message TestProto3.DateTimeMessage {\n" +
-        "  optional int64 timestamp (TIMESTAMP(MILLIS,true)) = 1;\n" +
+        "  optional int64 timestamp (TIMESTAMP(NANOS,true)) = 1;\n" +
         "  optional int32 date (DATE) = 2;\n" +
         "  optional int64 time (TIME(NANOS,true)) = 3;\n" +
         "}";

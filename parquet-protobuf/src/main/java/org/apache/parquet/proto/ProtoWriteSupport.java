@@ -613,7 +613,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     @Override
     void writeRawValue(Object value) {
       Timestamp timestamp = (Timestamp) value;
-      recordConsumer.addLong(Timestamps.toMillis(timestamp));
+      recordConsumer.addLong(Timestamps.toNanos(timestamp));
     }
   }
 

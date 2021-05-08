@@ -49,6 +49,8 @@ import java.time.LocalTime;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class ProtoWriteSupportTest {
 
@@ -1025,7 +1027,7 @@ public class ProtoWriteSupportTest {
 
     inOrder.verify(readConsumerMock).startMessage();
     inOrder.verify(readConsumerMock).startField("timestamp", 0);
-    inOrder.verify(readConsumerMock).addLong(Timestamps.toMillis(timestamp));
+    inOrder.verify(readConsumerMock).addLong(Timestamps.toNanos(timestamp));
     inOrder.verify(readConsumerMock).endField("timestamp", 0);
     inOrder.verify(readConsumerMock).startField("date", 1);
     inOrder.verify(readConsumerMock).addInteger((int) date.toEpochDay());
@@ -1134,5 +1136,39 @@ public class ProtoWriteSupportTest {
     assertEquals(BoolValue.of(true), gotBackFirst.getWrappedBool());
     assertEquals("Good Will Hunting", gotBackFirst.getWrappedString().getValue());
     assertEquals(ByteString.copyFrom("someText", "UTF-8"), gotBackFirst.getWrappedBytes().getValue());
+  }
+
+  @Test
+  public void testProto3WrappedMessageWithNullsRoundTrip() throws Exception {
+    TestProto3.WrappedMessage.Builder msg = TestProto3.WrappedMessage.newBuilder();
+    msg.setWrappedFloat(FloatValue.of(3.1415f));
+    msg.setWrappedString(StringValue.of("Good Will Hunting"));
+    msg.setWrappedInt32(Int32Value.of(0));
+
+    //Write them out and read them back
+    Path tmpFilePath = TestUtils.someTemporaryFilePath();
+    ParquetWriter<MessageOrBuilder> writer =
+      ProtoParquetWriter.<MessageOrBuilder>builder(tmpFilePath)
+        .withMessage(TestProto3.WrappedMessage.class)
+        .config(ProtoWriteSupport.PB_UNWRAP_PROTO_WRAPPERS, "true")
+        .build();
+    writer.write(msg);
+    writer.close();
+    List<TestProto3.WrappedMessage> gotBack = TestUtils.readMessages(tmpFilePath, TestProto3.WrappedMessage.class);
+
+    TestProto3.WrappedMessage gotBackFirst = gotBack.get(0);
+    assertFalse(gotBackFirst.hasWrappedDouble());
+    assertEquals(3.1415f, gotBackFirst.getWrappedFloat().getValue(), 1e-5f);
+
+    // double-check that nulls are honored
+    assertTrue(gotBackFirst.hasWrappedFloat());
+    assertFalse(gotBackFirst.hasWrappedInt64());
+    assertFalse(gotBackFirst.hasWrappedUInt64());
+    assertTrue(gotBackFirst.hasWrappedInt32());
+    assertFalse(gotBackFirst.hasWrappedUInt32());
+    assertEquals(0, gotBackFirst.getWrappedUInt32().getValue());
+    assertFalse(gotBackFirst.hasWrappedBool());
+    assertEquals("Good Will Hunting", gotBackFirst.getWrappedString().getValue());
+    assertFalse(gotBackFirst.hasWrappedBytes());
   }
 }
