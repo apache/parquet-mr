@@ -110,6 +110,9 @@
 
     <!-- properties for the profiles -->
     <surefire.logLevel>INFO</surefire.logLevel>
+
+    <!-- Resource intesive tests are enabled by default but disabled in the CI envrionment -->
+    <enableResourceIntensiveTests>true</enableResourceIntensiveTests>
   </properties>
 
   <modules>
@@ -378,6 +381,7 @@
 
             <!-- Configure log level for Hadoop -->
             <hadoop.logLevel>${surefire.logLevel}</hadoop.logLevel>
+            <enableResourceIntensiveTests>${enableResourceIntensiveTests}</enableResourceIntensiveTests>
           </systemPropertyVariables>
           <excludes>
             <exclude>**/benchmark/*.java</exclude>
@@ -562,6 +566,7 @@
       <properties>
         <surefire.logLevel>WARN</surefire.logLevel>
         <surefire.argLine>-XX:MaxJavaStackTraceDepth=10</surefire.argLine>
+        <enableResourceIntensiveTests>false</enableResourceIntensiveTests>
       </properties>
     </profile>
 

@@ -35,6 +35,7 @@ import java.util.Random;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.ResourceIntensiveTestRule;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.GroupFactory;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
@@ -47,13 +48,12 @@ import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.MessageType;
 import org.junit.*;
 import org.junit.rules.TemporaryFolder;
+import org.junit.rules.TestRule;
 
 /**
  * This test is to test parquet-mr working with potential int overflows (when the sizes are greater than
- * Integer.MAX_VALUE). The test requires ~3GB memory so it is likely to fail in the CI environment, so these
- * tests are flagged to be ignored.
+ * Integer.MAX_VALUE).
  */
-@Ignore
 public class TestLargeColumnChunk {
   private static final MessageType SCHEMA = buildMessage().addFields(
       required(INT64).named("id"),
@@ -70,6 +70,9 @@ public class TestLargeColumnChunk {
   private static Binary VALUE_IN_DATA;
   private static Binary VALUE_NOT_IN_DATA;
   private static Path file;
+
+  @ClassRule
+  public static TestRule maySkip = ResourceIntensiveTestRule.get();
 
   @ClassRule
   public static TemporaryFolder folder = new TemporaryFolder();
