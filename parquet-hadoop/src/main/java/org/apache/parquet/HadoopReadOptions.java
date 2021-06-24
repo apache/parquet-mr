@@ -31,6 +31,7 @@ import org.apache.parquet.hadoop.util.HadoopCodecs;
 
 import java.util.Map;
 
+import static org.apache.parquet.hadoop.ParquetInputFormat.ALLOCATOR_DIRECT_BYTEBUFFER_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.COLUMN_INDEX_FILTERING_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.DICTIONARY_FILTERING_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.BLOOM_FILTERING_ENABLED;
@@ -105,6 +106,7 @@ public class HadoopReadOptions extends ParquetReadOptions {
       useStatsFilter(conf.getBoolean(STATS_FILTERING_ENABLED, true));
       useRecordFilter(conf.getBoolean(RECORD_FILTERING_ENABLED, true));
       useColumnIndexFilter(conf.getBoolean(COLUMN_INDEX_FILTERING_ENABLED, true));
+      useDirectByteBufferAllocator(conf.getBoolean(ALLOCATOR_DIRECT_BYTEBUFFER_ENABLED, false));
       usePageChecksumVerification(conf.getBoolean(PAGE_VERIFY_CHECKSUM_ENABLED,
         usePageChecksumVerification));
       useBloomFilter(conf.getBoolean(BLOOM_FILTERING_ENABLED, true));

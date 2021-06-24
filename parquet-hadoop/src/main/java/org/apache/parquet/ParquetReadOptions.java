@@ -20,6 +20,7 @@
 package org.apache.parquet;
 
 import org.apache.parquet.bytes.ByteBufferAllocator;
+import org.apache.parquet.bytes.DirectByteBufferAllocator;
 import org.apache.parquet.bytes.HeapByteBufferAllocator;
 import org.apache.parquet.compression.CompressionCodecFactory;
 import org.apache.parquet.crypto.FileDecryptionProperties;
@@ -248,6 +249,13 @@ public class ParquetReadOptions {
 
     public Builder withRecordFilter(FilterCompat.Filter rowGroupFilter) {
       this.recordFilter = rowGroupFilter;
+      return this;
+    }
+
+    public Builder useDirectByteBufferAllocator(boolean useDirectByteBuffer) {
+      if (useDirectByteBuffer) {
+        this.allocator = new DirectByteBufferAllocator();
+      }
       return this;
     }
 
