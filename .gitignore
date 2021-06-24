@@ -13,7 +13,6 @@ target
 *.orig
 *.rej
 dependency-reduced-pom.xml
-parquet-scrooge/.cache
 .idea/*
 target/
 .cache
