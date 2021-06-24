@@ -134,6 +134,11 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
       };
 
       Class<?> fieldClass = fields.get(avroField.name());
+      if ((null != fieldClass) && (Modifier.isAbstract(fieldClass.getModifiers()) ||
+          Modifier.isInterface(fieldClass.getModifiers()) ||
+          fieldClass.equals(Object.class)) ) {
+        fieldClass = null;
+      }
       converters[parquetFieldIndex] = newConverter(
           nonNullSchema, parquetField, this.model, fieldClass, container);
 
