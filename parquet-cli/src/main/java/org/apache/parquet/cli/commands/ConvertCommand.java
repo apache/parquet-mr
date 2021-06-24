@@ -157,9 +157,9 @@ public class ConvertCommand extends BaseCommand {
         "# Create a Parquet file from an Avro file",
         "sample.avro -o sample.parquet",
         "# Create a Parquet file in S3 from a local Avro file",
-        "path/to/sample.avro -o s3:/user/me/sample.parquet",
+        "path/to/sample.avro -o s3a://user/me/sample.parquet",
         "# Create a Parquet file from Avro data in S3",
-        "s3:/data/path/sample.avro -o sample.parquet"
+        "s3a://data/path/sample.avro -o sample.parquet"
     );
   }
 }

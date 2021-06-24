@@ -105,6 +105,8 @@ public class ParquetMetadataCommand extends BaseCommand {
   @Override
   public List<String> getExamples() {
     return Lists.newArrayList(
+      "# Show the metadata for the specified file",
+      "sample.parquet"
     );
   }
 

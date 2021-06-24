@@ -124,11 +124,11 @@ public class ToAvroCommand extends BaseCommand {
   public List<String> getExamples() {
     return Lists.newArrayList(
         "# Create an Avro file from a Parquet file",
-        "sample.parquet sample.avro",
+        "sample.parquet -o sample.avro",
         "# Create an Avro file in HDFS from a local JSON file",
-        "path/to/sample.json hdfs:/user/me/sample.parquet",
+        "path/to/sample.json -o hdfs://user/me/sample.avro",
         "# Create an Avro file from data in S3",
-        "s3:/data/path/sample.parquet sample.avro"
+        "s3a://data/path/sample.parquet -o sample.avro"
     );
   }
 }
