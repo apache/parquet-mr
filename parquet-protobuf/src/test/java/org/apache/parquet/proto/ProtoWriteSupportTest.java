@@ -18,20 +18,39 @@
  */
 package org.apache.parquet.proto;
 
+import com.google.protobuf.BoolValue;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.BytesValue;
+import com.google.protobuf.DoubleValue;
+import com.google.protobuf.FloatValue;
+import com.google.protobuf.Int32Value;
+import com.google.protobuf.Int64Value;
 import com.google.protobuf.Message;
+import com.google.protobuf.MessageOrBuilder;
+import com.google.protobuf.StringValue;
+import com.google.protobuf.Timestamp;
+import com.google.protobuf.UInt32Value;
+import com.google.protobuf.UInt64Value;
+import com.google.protobuf.util.Timestamps;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.junit.Test;
-import static org.junit.Assert.*;
-import org.mockito.InOrder;
-import org.mockito.Mockito;
+import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.io.api.RecordConsumer;
 import org.apache.parquet.proto.test.TestProto3;
 import org.apache.parquet.proto.test.TestProtobuf;
+import org.junit.Test;
+import org.mockito.InOrder;
+import org.mockito.Mockito;
 
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class ProtoWriteSupportTest {
 
@@ -975,5 +994,181 @@ public class ProtoWriteSupportTest {
     assertEquals(gotBackThird.getFirst(), 42);
     assertEquals(gotBackThird.getTheOneofCase(), TestProto3.OneOfTestMessage.TheOneofCase.FIRST);
 
+  }
+
+  @Test
+  public void testProto3DateTimeMessageUnwrapped() throws Exception {
+    Timestamp timestamp = Timestamps.parse("2021-05-02T15:04:03.748Z");
+    LocalDate date = LocalDate.of(2021, 5, 2);
+    LocalTime time = LocalTime.of(15, 4, 3, 748_000_000);
+
+    RecordConsumer readConsumerMock =  Mockito.mock(RecordConsumer.class);
+    Configuration conf = new Configuration();
+    ProtoWriteSupport.setUnwrapProtoWrappers(conf, true);
+    ProtoWriteSupport<TestProto3.DateTimeMessage> instance = createReadConsumerInstance(
+      TestProto3.DateTimeMessage.class, readConsumerMock, conf);
+
+    TestProto3.DateTimeMessage.Builder msg = TestProto3.DateTimeMessage.newBuilder();
+    msg.setTimestamp(timestamp);
+    msg.setDate(com.google.type.Date.newBuilder()
+      .setYear(date.getYear())
+      .setMonth(date.getMonthValue())
+      .setDay(date.getDayOfMonth())
+    );
+    msg.setTime(com.google.type.TimeOfDay.newBuilder()
+      .setHours(time.getHour())
+      .setMinutes(time.getMinute())
+      .setSeconds(time.getSecond())
+      .setNanos(time.getNano())
+    );
+    instance.write(msg.build());
+
+    InOrder inOrder = Mockito.inOrder(readConsumerMock);
+
+    inOrder.verify(readConsumerMock).startMessage();
+    inOrder.verify(readConsumerMock).startField("timestamp", 0);
+    inOrder.verify(readConsumerMock).addLong(Timestamps.toNanos(timestamp));
+    inOrder.verify(readConsumerMock).endField("timestamp", 0);
+    inOrder.verify(readConsumerMock).startField("date", 1);
+    inOrder.verify(readConsumerMock).addInteger((int) date.toEpochDay());
+    inOrder.verify(readConsumerMock).endField("date", 1);
+    inOrder.verify(readConsumerMock).startField("time", 2);
+    inOrder.verify(readConsumerMock).addLong(time.toNanoOfDay());
+    inOrder.verify(readConsumerMock).endField("time", 2);
+    inOrder.verify(readConsumerMock).endMessage();
+    Mockito.verifyNoMoreInteractions(readConsumerMock);
+  }
+
+  @Test
+  public void testProto3DateTimeMessageRoundTrip() throws Exception {
+    Timestamp timestamp = Timestamps.parse("2021-05-02T15:04:03.748Z");
+    LocalDate date = LocalDate.of(2021, 5, 2);
+    LocalTime time = LocalTime.of(15, 4, 3, 748_000_000);
+    com.google.type.Date protoDate = com.google.type.Date.newBuilder()
+      .setYear(date.getYear())
+      .setMonth(date.getMonthValue())
+      .setDay(date.getDayOfMonth())
+      .build();
+    com.google.type.TimeOfDay protoTime = com.google.type.TimeOfDay.newBuilder()
+      .setHours(time.getHour())
+      .setMinutes(time.getMinute())
+      .setSeconds(time.getSecond())
+      .setNanos(time.getNano())
+      .build();
+
+    TestProto3.DateTimeMessage msg = TestProto3.DateTimeMessage.newBuilder()
+      .setTimestamp(timestamp)
+      .setDate(protoDate)
+      .setTime(protoTime)
+      .build();
+
+    //Write them out and read them back
+    Path tmpFilePath = TestUtils.someTemporaryFilePath();
+    ParquetWriter<MessageOrBuilder> writer =
+      ProtoParquetWriter.<MessageOrBuilder>builder(tmpFilePath)
+        .withMessage(TestProto3.DateTimeMessage.class)
+        .config(ProtoWriteSupport.PB_UNWRAP_PROTO_WRAPPERS, "true")
+        .build();
+    writer.write(msg);
+    writer.close();
+    List<TestProto3.DateTimeMessage> gotBack = TestUtils.readMessages(tmpFilePath, TestProto3.DateTimeMessage.class);
+
+    TestProto3.DateTimeMessage gotBackFirst = gotBack.get(0);
+    assertEquals(timestamp, gotBackFirst.getTimestamp());
+    assertEquals(protoDate, gotBackFirst.getDate());
+    assertEquals(protoTime, gotBackFirst.getTime());
+  }
+
+  @Test
+  public void testProto3WrappedMessageUnwrapped() throws Exception {
+    RecordConsumer readConsumerMock =  Mockito.mock(RecordConsumer.class);
+    Configuration conf = new Configuration();
+    ProtoWriteSupport.setUnwrapProtoWrappers(conf, true);
+    ProtoWriteSupport<TestProto3.WrappedMessage> instance = createReadConsumerInstance(
+      TestProto3.WrappedMessage.class, readConsumerMock, conf);
+
+    TestProto3.WrappedMessage.Builder msg = TestProto3.WrappedMessage.newBuilder();
+    msg.setWrappedDouble(DoubleValue.of(3.1415));
+
+    instance.write(msg.build());
+
+    InOrder inOrder = Mockito.inOrder(readConsumerMock);
+
+    inOrder.verify(readConsumerMock).startMessage();
+    inOrder.verify(readConsumerMock).startField("wrappedDouble", 0);
+    inOrder.verify(readConsumerMock).addDouble(3.1415);
+    inOrder.verify(readConsumerMock).endField("wrappedDouble", 0);
+    inOrder.verify(readConsumerMock).endMessage();
+    Mockito.verifyNoMoreInteractions(readConsumerMock);
+  }
+
+  @Test
+  public void testProto3WrappedMessageUnwrappedRoundTrip() throws Exception {
+    TestProto3.WrappedMessage.Builder msg = TestProto3.WrappedMessage.newBuilder();
+    msg.setWrappedDouble(DoubleValue.of(0.577));
+    msg.setWrappedFloat(FloatValue.of(3.1415f));
+    msg.setWrappedInt64(Int64Value.of(1_000_000_000L * 4));
+    msg.setWrappedUInt64(UInt64Value.of(1_000_000_000L * 9));
+    msg.setWrappedInt32(Int32Value.of(1_000_000 * 3));
+    msg.setWrappedUInt32(UInt32Value.of(1_000_000 * 8));
+    msg.setWrappedBool(BoolValue.of(true));
+    msg.setWrappedString(StringValue.of("Good Will Hunting"));
+    msg.setWrappedBytes(BytesValue.of(ByteString.copyFrom("someText", "UTF-8")));
+
+    //Write them out and read them back
+    Path tmpFilePath = TestUtils.someTemporaryFilePath();
+    ParquetWriter<MessageOrBuilder> writer =
+      ProtoParquetWriter.<MessageOrBuilder>builder(tmpFilePath)
+        .withMessage(TestProto3.WrappedMessage.class)
+        .config(ProtoWriteSupport.PB_UNWRAP_PROTO_WRAPPERS, "true")
+        .build();
+    writer.write(msg);
+    writer.close();
+    List<TestProto3.WrappedMessage> gotBack = TestUtils.readMessages(tmpFilePath, TestProto3.WrappedMessage.class);
+
+    TestProto3.WrappedMessage gotBackFirst = gotBack.get(0);
+    assertEquals(0.577, gotBackFirst.getWrappedDouble().getValue(), 1e-5);
+    assertEquals(3.1415f, gotBackFirst.getWrappedFloat().getValue(), 1e-5f);
+    assertEquals(1_000_000_000L * 4, gotBackFirst.getWrappedInt64().getValue());
+    assertEquals(1_000_000_000L * 9, gotBackFirst.getWrappedUInt64().getValue());
+    assertEquals(1_000_000 * 3, gotBackFirst.getWrappedInt32().getValue());
+    assertEquals(1_000_000 * 8, gotBackFirst.getWrappedUInt32().getValue());
+    assertEquals(BoolValue.of(true), gotBackFirst.getWrappedBool());
+    assertEquals("Good Will Hunting", gotBackFirst.getWrappedString().getValue());
+    assertEquals(ByteString.copyFrom("someText", "UTF-8"), gotBackFirst.getWrappedBytes().getValue());
+  }
+
+  @Test
+  public void testProto3WrappedMessageWithNullsRoundTrip() throws Exception {
+    TestProto3.WrappedMessage.Builder msg = TestProto3.WrappedMessage.newBuilder();
+    msg.setWrappedFloat(FloatValue.of(3.1415f));
+    msg.setWrappedString(StringValue.of("Good Will Hunting"));
+    msg.setWrappedInt32(Int32Value.of(0));
+
+    //Write them out and read them back
+    Path tmpFilePath = TestUtils.someTemporaryFilePath();
+    ParquetWriter<MessageOrBuilder> writer =
+      ProtoParquetWriter.<MessageOrBuilder>builder(tmpFilePath)
+        .withMessage(TestProto3.WrappedMessage.class)
+        .config(ProtoWriteSupport.PB_UNWRAP_PROTO_WRAPPERS, "true")
+        .build();
+    writer.write(msg);
+    writer.close();
+    List<TestProto3.WrappedMessage> gotBack = TestUtils.readMessages(tmpFilePath, TestProto3.WrappedMessage.class);
+
+    TestProto3.WrappedMessage gotBackFirst = gotBack.get(0);
+    assertFalse(gotBackFirst.hasWrappedDouble());
+    assertEquals(3.1415f, gotBackFirst.getWrappedFloat().getValue(), 1e-5f);
+
+    // double-check that nulls are honored
+    assertTrue(gotBackFirst.hasWrappedFloat());
+    assertFalse(gotBackFirst.hasWrappedInt64());
+    assertFalse(gotBackFirst.hasWrappedUInt64());
+    assertTrue(gotBackFirst.hasWrappedInt32());
+    assertFalse(gotBackFirst.hasWrappedUInt32());
+    assertEquals(0, gotBackFirst.getWrappedUInt32().getValue());
+    assertFalse(gotBackFirst.hasWrappedBool());
+    assertEquals("Good Will Hunting", gotBackFirst.getWrappedString().getValue());
+    assertFalse(gotBackFirst.hasWrappedBytes());
   }
 }

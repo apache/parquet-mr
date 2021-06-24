@@ -23,6 +23,11 @@ package TestProto3;
 
 option java_package = "org.apache.parquet.proto.test";
 
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/date.proto";
+import "google/type/timeofday.proto";
+
 // original Dremel paper structures: Original paper used groups, not internal
 // messages but groups were deprecated.
 
@@ -155,4 +160,22 @@ message FirstCustomClassMessage {
 
 message SecondCustomClassMessage {
     string string = 11;
+}
+
+message DateTimeMessage {
+  google.protobuf.Timestamp timestamp = 1;
+  google.type.Date date = 2;
+  google.type.TimeOfDay time = 3;
+}
+
+message WrappedMessage {
+  google.protobuf.DoubleValue wrappedDouble = 1;
+  google.protobuf.FloatValue wrappedFloat = 2;
+  google.protobuf.Int64Value wrappedInt64 = 3;
+  google.protobuf.UInt64Value wrappedUInt64 = 4;
+  google.protobuf.Int32Value wrappedInt32 = 5;
+  google.protobuf.UInt32Value wrappedUInt32 = 6;
+  google.protobuf.BoolValue wrappedBool = 7;
+  google.protobuf.StringValue wrappedString = 8;
+  google.protobuf.BytesValue wrappedBytes = 9;
 }

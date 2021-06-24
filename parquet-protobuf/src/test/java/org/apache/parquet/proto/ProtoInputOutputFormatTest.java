@@ -18,8 +18,12 @@
  */
 package org.apache.parquet.proto;
 
+import com.google.protobuf.BoolValue;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.DoubleValue;
 import com.google.protobuf.Message;
+import com.google.protobuf.Timestamp;
+import com.google.protobuf.util.Timestamps;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.proto.test.TestProto3;
@@ -32,7 +36,9 @@ import org.junit.Test;
 
 import java.util.List;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 
 public class ProtoInputOutputFormatTest {
@@ -605,6 +611,49 @@ public class ProtoInputOutputFormatTest {
     assertEquals("Third inner", third.getThree());
     assertTrue(third.getOne().isEmpty());
     assertTrue(third.getTwo().isEmpty());
+  }
+
+  @Test
+  public void testProto3TimestampMessageClass() throws Exception {
+    Timestamp timestamp = Timestamps.parse("2021-05-02T15:04:03.748Z");
+    TestProto3.DateTimeMessage msgEmpty = TestProto3.DateTimeMessage.newBuilder().build();
+    TestProto3.DateTimeMessage msgNonEmpty = TestProto3.DateTimeMessage.newBuilder()
+      .setTimestamp(timestamp)
+      .build();
+
+    Configuration conf = new Configuration();
+    conf.setBoolean(ProtoWriteSupport.PB_UNWRAP_PROTO_WRAPPERS, true);
+    Path outputPath = new WriteUsingMR(conf).write(msgEmpty, msgNonEmpty);
+    ReadUsingMR readUsingMR = new ReadUsingMR();
+    String customClass = TestProto3.DateTimeMessage.class.getName();
+    ProtoReadSupport.setProtobufClass(readUsingMR.getConfiguration(), customClass);
+    List<Message> result = readUsingMR.read(outputPath);
+
+    assertEquals(2, result.size());
+    assertEquals(msgEmpty, result.get(0));
+    assertEquals(msgNonEmpty, result.get(1));
+  }
+
+  @Test
+  public void testProto3WrappedMessageClass() throws Exception {
+    TestProto3.WrappedMessage msgEmpty = TestProto3.WrappedMessage.newBuilder().build();
+    TestProto3.WrappedMessage msgNonEmpty = TestProto3.WrappedMessage.newBuilder()
+      .setWrappedDouble(DoubleValue.of(0.577))
+      .setWrappedBool(BoolValue.of(true))
+      .build();
+
+
+    Configuration conf = new Configuration();
+    conf.setBoolean(ProtoWriteSupport.PB_UNWRAP_PROTO_WRAPPERS, true);
+    Path outputPath = new WriteUsingMR(conf).write(msgEmpty, msgNonEmpty);
+    ReadUsingMR readUsingMR = new ReadUsingMR();
+    String customClass = TestProto3.WrappedMessage.class.getName();
+    ProtoReadSupport.setProtobufClass(readUsingMR.getConfiguration(), customClass);
+    List<Message> result = readUsingMR.read(outputPath);
+
+    assertEquals(2, result.size());
+    assertEquals(msgEmpty, result.get(0));
+    assertEquals(msgNonEmpty, result.get(1));
   }
 
   /**

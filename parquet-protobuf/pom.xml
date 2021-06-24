@@ -32,6 +32,7 @@
   <properties>
     <elephant-bird.version>4.4</elephant-bird.version>
     <protobuf.version>3.5.1</protobuf.version>
+    <common-protos.version>1.12.0</common-protos.version>  <!-- make sure it's compatible with protobuf.version -->
     <truth-proto-extension.version>1.0</truth-proto-extension.version>
   </properties>
 
@@ -56,6 +57,16 @@
       <groupId>com.google.protobuf</groupId>
       <artifactId>protobuf-java</artifactId>
       <version>${protobuf.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java-util</artifactId>
+      <version>${protobuf.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.api.grpc</groupId>
+      <artifactId>proto-google-common-protos</artifactId>
+      <version>${common-protos.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
@@ -161,6 +172,7 @@
             </goals>
             <configuration>
               <protocArtifact>com.google.protobuf:protoc:${protobuf.version}</protocArtifact>
+              <includeMavenTypes>direct</includeMavenTypes>
               <addSources>test</addSources>
               <addProtoSources>all</addProtoSources>
               <outputDirectory>${project.build.directory}/generated-test-sources/java</outputDirectory>

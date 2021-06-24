@@ -35,22 +35,49 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
+import static org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit;
+import static org.apache.parquet.schema.LogicalTypeAnnotation.dateType;
 import static org.apache.parquet.schema.LogicalTypeAnnotation.enumType;
 import static org.apache.parquet.schema.LogicalTypeAnnotation.listType;
 import static org.apache.parquet.schema.LogicalTypeAnnotation.mapType;
 import static org.apache.parquet.schema.LogicalTypeAnnotation.stringType;
-import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.*;
+import static org.apache.parquet.schema.LogicalTypeAnnotation.timeType;
+import static org.apache.parquet.schema.LogicalTypeAnnotation.timestampType;
+import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY;
+import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BOOLEAN;
+import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.DOUBLE;
+import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.FLOAT;
+import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.INT32;
+import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.INT64;
 
 /**
  * Converts a Protocol Buffer Descriptor into a Parquet schema.
  */
 public class ProtoSchemaConverter {
 
+  public static final String PROTOBUF_TIMESTAMP_TYPE = "google.protobuf.Timestamp";
+  public static final String PROTOBUF_DATE_TYPE = "google.type.Date";
+  public static final String PROTOBUF_TIME_TYPE = "google.type.TimeOfDay";
+  public static final String PROTOBUF_DOUBLE_TYPE = "google.protobuf.DoubleValue";
+  public static final String PROTOBUF_FLOAT_TYPE = "google.protobuf.FloatValue";
+  public static final String PROTOBUF_INT64_TYPE = "google.protobuf.Int64Value";
+  public static final String PROTOBUF_UINT64_TYPE = "google.protobuf.UInt64Value";
+  public static final String PROTOBUF_INT32_TYPE = "google.protobuf.Int32Value";
+  public static final String PROTOBUF_UINT32_TYPE = "google.protobuf.UInt32Value";
+  public static final String PROTOBUF_BOOL_TYPE = "google.protobuf.BoolValue";
+  public static final String PROTOBUF_STRING_TYPE = "google.protobuf.StringValue";
+  public static final String PROTOBUF_BYTES_TYPE = "google.protobuf.BytesValue";
+
   private static final Logger LOG = LoggerFactory.getLogger(ProtoSchemaConverter.class);
   private final boolean parquetSpecsCompliant;
+  private final boolean unwrapProtoWrappers;
 
   public ProtoSchemaConverter() {
-    this(false);
+    this(false, false);
+  }
+
+  public ProtoSchemaConverter(boolean parquetSpecsCompliant) {
+    this(parquetSpecsCompliant, false);
   }
 
   /**
@@ -59,9 +86,12 @@ public class ProtoSchemaConverter {
    *                                schema style (prior to PARQUET-968) to provide backward-compatibility
    *                                but which does not use LIST and MAP wrappers around collections as required
    *                                by the parquet specifications. If set to true, specs compliant schemas are used.
+   * @param unwrapProtoWrappers     If set to true, unwrap common Proto wrappers like Timestamp and DoubleValue
+   *                                with logical annotations as appropriate.
    */
-  public ProtoSchemaConverter(boolean parquetSpecsCompliant) {
+  public ProtoSchemaConverter(boolean parquetSpecsCompliant, boolean unwrapProtoWrappers) {
     this.parquetSpecsCompliant = parquetSpecsCompliant;
+    this.unwrapProtoWrappers = unwrapProtoWrappers;
   }
 
   public MessageType convert(Class<? extends Message> protobufClass) {
@@ -97,6 +127,46 @@ public class ProtoSchemaConverter {
 
   private <T> Builder<? extends Builder<?, GroupBuilder<T>>, GroupBuilder<T>> addField(FieldDescriptor descriptor, final GroupBuilder<T> builder) {
     if (descriptor.getJavaType() == JavaType.MESSAGE) {
+      if (unwrapProtoWrappers) {
+        String typeName = descriptor.getMessageType().getFullName();
+        if (typeName.equals(PROTOBUF_TIMESTAMP_TYPE)) {
+          return builder.primitive(INT64, getRepetition(descriptor)).as(timestampType(true, TimeUnit.NANOS));
+        }
+        if (typeName.equals(PROTOBUF_DATE_TYPE)) {
+          return builder.primitive(INT32, getRepetition(descriptor)).as(dateType());
+        }
+        if (typeName.equals(PROTOBUF_TIME_TYPE)) {
+          return builder.primitive(INT64, getRepetition(descriptor)).as(timeType(true, TimeUnit.NANOS));
+        }
+        if (typeName.equals(PROTOBUF_DOUBLE_TYPE)) {
+          return builder.primitive(DOUBLE, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_STRING_TYPE)) {
+          return builder.primitive(BINARY, getRepetition(descriptor)).as(stringType());
+        }
+        if (typeName.equals(PROTOBUF_BOOL_TYPE)) {
+          return builder.primitive(BOOLEAN, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_FLOAT_TYPE)) {
+          return builder.primitive(FLOAT, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_INT64_TYPE)) {
+          return builder.primitive(INT64, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_UINT64_TYPE)) {
+          return builder.primitive(INT64, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_INT32_TYPE)) {
+          return builder.primitive(INT32, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_UINT32_TYPE)) {
+          return builder.primitive(INT64, getRepetition(descriptor));
+        }
+        if (typeName.equals(PROTOBUF_BYTES_TYPE)) {
+          return builder.primitive(BINARY, getRepetition(descriptor));
+        }
+      }
+
       return addMessageField(descriptor, builder);
     }
 
