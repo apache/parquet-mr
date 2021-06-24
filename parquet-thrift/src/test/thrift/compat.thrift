@@ -270,3 +270,29 @@ struct NestedEmptyStruct {
   1: required EmptyStruct required_empty
   2: optional EmptyStruct optional_empty
 }
+
+union TestForwardCompatUnionV1 {
+  1: EmptyStruct empty1
+  2: string string2
+}
+
+union TestForwardCompatUnionV2 {
+  1: EmptyStruct empty1
+  2: string string2_renamed
+  3: AString struct2
+}
+
+struct TestForwardCompatRootV0 {
+  1: required string str
+}
+
+struct TestForwardCompatRootV1 {
+  1: required string str 
+  2: optional TestForwardCompatUnionV1 u
+}
+
+struct TestForwardCompatRootV2 {
+  1: required string str 
+  2: optional TestForwardCompatUnionV2 u
+}
+
