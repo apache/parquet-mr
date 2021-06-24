@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing,
  * software distributed under the License is distributed on an
  * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -132,7 +132,7 @@ public class MemoryManager {
           " is smaller than the minimum allocation size of %d bytes.",
               newSize, minMemoryAllocation)){};
       }
-      entry.getKey().setRowGroupSizeThreshold(newSize);
+      entry.getKey().updateRowGroupSizeThreshold(newSize);
       LOG.debug(String.format("Adjust block size from %,d to %,d for writer: %s",
             entry.getValue(), newSize, entry.getKey()));
     }
