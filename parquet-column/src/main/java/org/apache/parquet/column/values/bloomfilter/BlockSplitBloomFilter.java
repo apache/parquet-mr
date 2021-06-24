@@ -394,4 +394,33 @@ public class BlockSplitBloomFilter implements BloomFilter {
   public long hash(Binary value) {
     return hashFunction.hashBytes(value.getBytes());
   }
+
+  private boolean checkCompatibility(BlockSplitBloomFilter that) {
+    return this.getBitsetSize() == that.getBitsetSize() &&
+      this.hashStrategy == that.hashStrategy &&
+      this.getAlgorithm() == that.getAlgorithm();
+  }
+
+  @Override
+  public BloomFilter union(BloomFilter bloomFilter) {
+    if (bloomFilter instanceof BlockSplitBloomFilter) {
+      BlockSplitBloomFilter that = (BlockSplitBloomFilter) bloomFilter;
+
+      if (!checkCompatibility(that)) {
+        throw new IllegalArgumentException("Bloom filter is not compatible! "
+          + "Bitset size = " + that.getBitsetSize() + ", hash strategy = " + that.hashStrategy
+          + ", algorithm = " + that.getAlgorithm());
+      }
+
+      for (int i = 0; i < this.bitset.length; i++) {
+        this.bitset[i] |= that.bitset[i];
+      }
+
+      return new BlockSplitBloomFilter(this.bitset);
+    } else {
+      throw new IllegalArgumentException("Unsupported BloomFilter implementation to union with: " + bloomFilter.getClass());
+    }
+
+  }
+
 }

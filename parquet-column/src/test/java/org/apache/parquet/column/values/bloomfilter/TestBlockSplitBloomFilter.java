@@ -116,6 +116,38 @@ public class TestBlockSplitBloomFilter {
   }
 
   @Test
+  public void testUnion() {
+    final String[] setOne = {"hello", "parquet", "bloom"};
+    final String[] setTwo = {"Bye", "parquet", "bloomFilter"};
+    final String[] setUnion = {"Bye", "parquet", "bloomFilter","hello","bloom"};
+    BlockSplitBloomFilter bloomFilterOne = new BlockSplitBloomFilter(1024);
+    BlockSplitBloomFilter bloomFilterTwo = new BlockSplitBloomFilter(1024);
+
+    for (String word : setOne) {
+      bloomFilterOne.insertHash(bloomFilterOne.hash(Binary.fromString(word)));
+    }
+
+    for (String word : setTwo) {
+      bloomFilterTwo.insertHash(bloomFilterTwo.hash(Binary.fromString(word)));
+    }
+
+    BloomFilter bloomFilterUnion = bloomFilterOne.union(bloomFilterTwo);
+
+    for (String word : setUnion) {
+      assertTrue(bloomFilterUnion.findHash(bloomFilterUnion.hash(Binary.fromString(word))));
+    }
+  }
+
+  @Test(expected = IllegalArgumentException.class)
+  public void testFailedUnion(){
+
+    BlockSplitBloomFilter bloomFilterTwo = new BlockSplitBloomFilter(512);
+    BlockSplitBloomFilter bloomFilterOne = new BlockSplitBloomFilter(1024);
+
+    BloomFilter wrongbloomFilter = bloomFilterOne.union(bloomFilterTwo);
+  }
+
+  @Test
   public void testBloomFilterFPPAccuracy() {
     final int totalCount = 100000;
     final double FPP = 0.01;
