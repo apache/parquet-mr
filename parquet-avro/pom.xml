@@ -45,13 +45,18 @@
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
-      <artifactId>parquet-format-structures</artifactId>
+      <artifactId>parquet-common</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.avro</groupId>
       <artifactId>avro</artifactId>
       <version>${avro.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
     </dependency>
     <dependency>
       <groupId>it.unimi.dsi</groupId>
@@ -61,14 +66,17 @@
     <dependency>
       <groupId>org.apache.hadoop</groupId>
       <artifactId>hadoop-client</artifactId>
-      <version>${hadoop.version}</version>
       <scope>provided</scope>
-      <exclusions>
-        <exclusion>
-          <groupId>org.slf4j</groupId>
-          <artifactId>slf4j-log4j12</artifactId>
-        </exclusion>
-      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.google.guava</groupId>

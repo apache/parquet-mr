@@ -70,6 +70,16 @@
       <artifactId>zero-allocation-hashing</artifactId>
       <version>${net.openhft.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.yetus</groupId>
+      <artifactId>audience-annotations</artifactId>
+      <version>${yetus.audience-annotations.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
 
     <dependency>
       <groupId>com.carrotsearch</groupId>

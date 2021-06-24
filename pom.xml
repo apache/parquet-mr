@@ -101,12 +101,14 @@
     <mockito.version>1.10.19</mockito.version>
     <net.openhft.version>0.9</net.openhft.version>
     <exec-maven-plugin.version>1.6.0</exec-maven-plugin.version>
+    <yetus.audience-annotations.version>0.13.0</yetus.audience-annotations.version>
 
     <!-- parquet-cli dependencies -->
     <opencsv.version>2.3</opencsv.version>
     <jcommander.version>1.72</jcommander.version>
     <zstd-jni.version>1.5.0-1</zstd-jni.version>
     <commons-text.version>1.8</commons-text.version>
+    <jsr305.version>3.0.2</jsr305.version>
 
     <!-- properties for the profiles -->
     <surefire.logLevel>INFO</surefire.logLevel>
@@ -146,6 +148,44 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-mapreduce-client-core</artifactId>
+        <version>${hadoop.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-client</artifactId>
+        <version>${hadoop.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.hadoop</groupId>
+        <artifactId>hadoop-common</artifactId>
+        <version>${hadoop.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <reporting>
     <plugins>
@@ -487,6 +527,21 @@
             <goals>
               <goal>cmp</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>analyze-only</goal>
+            </goals>
+            <configuration>
+              <failOnWarning>true</failOnWarning>
+              <ignoreNonCompile>true</ignoreNonCompile>
+            </configuration>
           </execution>
         </executions>
       </plugin>

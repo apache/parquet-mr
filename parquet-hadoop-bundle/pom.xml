@@ -84,6 +84,21 @@
           </execution>
         </executions>
       </plugin>
+      <!-- Skip analyzing dependencies in this module so we can depend on modules without any code references -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>analyze-only</goal>
+            </goals>
+            <configuration>
+              <skip>true</skip>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 

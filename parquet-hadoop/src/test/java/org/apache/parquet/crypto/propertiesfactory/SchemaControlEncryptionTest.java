@@ -19,8 +19,6 @@
 
 package org.apache.parquet.crypto.propertiesfactory;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -28,7 +26,6 @@ import org.apache.parquet.crypto.EncryptionPropertiesFactory;
 import org.apache.parquet.crypto.ParquetCipher;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroup;
-import org.apache.parquet.format.EncryptionAlgorithm;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.api.WriteSupport;
@@ -39,6 +36,8 @@ import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -58,13 +57,13 @@ import static org.junit.Assert.assertEquals;
 
 public class SchemaControlEncryptionTest {
 
-  private final static Log LOG = LogFactory.getLog(SchemaControlEncryptionTest.class);
+  private final static Logger LOG = LoggerFactory.getLogger(SchemaControlEncryptionTest.class);
   private final static int numRecord = 1000;
   private Random rnd = new Random(5);
-  
+
   // In the test We use a map to tell WriteSupport which columns to be encrypted with what key. In real use cases, people
-  // can find whatever easy way to do so basing on how do they get these information, for example people can choose to 
-  // store in HMS, or other metastore. 
+  // can find whatever easy way to do so basing on how do they get these information, for example people can choose to
+  // store in HMS, or other metastore.
   private Map<String, Map<String, Object>> cryptoMetadata = new HashMap<>();
   private Map<String, Object[]> testData = new HashMap<>();
 
@@ -122,7 +121,7 @@ public class SchemaControlEncryptionTest {
     encryptParquetFile(file, conf);
     decryptParquetFileAndValid(file, conf);
   }
-  
+
   private void markEncryptColumns() {
     Map<String, Object> ageMetadata = new HashMap<>();
     ageMetadata.put("columnKeyMetaData", "age_key_id");

@@ -48,8 +48,14 @@
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
-      <artifactId>parquet-format-structures</artifactId>
+      <artifactId>parquet-common</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.parquet</groupId>
+      <artifactId>parquet-jackson</artifactId>
+      <version>${project.version}</version>
+      <scope>runtime</scope>
     </dependency>
     <dependency>
       <groupId>org.apache.pig</groupId>
@@ -65,19 +71,26 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>org.apache.parquet</groupId>
-      <artifactId>parquet-jackson</artifactId>
-      <version>${project.version}</version>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-mapreduce-client-core</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>${jackson.groupId}</groupId>
-      <artifactId>jackson-core</artifactId>
-      <version>${jackson.version}</version>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-common</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>${jackson.groupId}</groupId>
       <artifactId>jackson-databind</artifactId>
       <version>${jackson-databind.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>${jackson.groupId}</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>${jackson.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.parquet</groupId>
@@ -109,6 +122,11 @@
       <artifactId>slf4j-log4j12</artifactId>
       <version>${slf4j.version}</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
     </dependency>
   </dependencies>
 
