@@ -19,6 +19,12 @@
 
 package org.apache.parquet;
 
+/**
+ * Utility class for throwing Exceptions.
+ *
+ * @deprecated
+ */
+@Deprecated
 public class Exceptions {
   /**
    * If the given throwable is an instance of E, throw it as an E.

@@ -21,13 +21,10 @@ package org.apache.parquet.util;
 
 import org.apache.parquet.Preconditions;
 import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.HashMap;
 import java.util.Map;
-
-import static org.apache.parquet.Exceptions.throwIfInstance;
 
 public class DynConstructors {
   public static class Ctor<C> extends DynMethods.UnboundMethod {
@@ -45,22 +42,15 @@ public class DynConstructors {
     }
 
     public C newInstanceChecked(Object... args) throws Exception {
-      try {
-        return ctor.newInstance(args);
-      } catch (InstantiationException | IllegalAccessException e) {
-        throw e;
-      } catch (InvocationTargetException e) {
-        throwIfInstance(e.getCause(), Exception.class);
-        throwIfInstance(e.getCause(), RuntimeException.class);
-        throw new RuntimeException(e.getCause());
-      }
+      return ctor.newInstance(args);
     }
 
     public C newInstance(Object... args) {
       try {
         return newInstanceChecked(args);
+      } catch (RuntimeException re) {
+        throw re;
       } catch (Exception e) {
-        throwIfInstance(e, RuntimeException.class);
         throw new RuntimeException(e);
       }
     }

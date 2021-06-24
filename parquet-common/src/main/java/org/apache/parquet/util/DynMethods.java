@@ -20,14 +20,11 @@
 package org.apache.parquet.util;
 
 import org.apache.parquet.Preconditions;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
-
-import static org.apache.parquet.Exceptions.throwIfInstance;
 
 public class DynMethods {
 
@@ -52,25 +49,19 @@ public class DynMethods {
 
     @SuppressWarnings("unchecked")
     public <R> R invokeChecked(Object target, Object... args) throws Exception {
-      try {
-        if (argLength < 0) {
-          return (R) method.invoke(target, args);
-        } else {
-          return (R) method.invoke(target, Arrays.copyOfRange(args, 0, argLength));
-        }
-
-      } catch (InvocationTargetException e) {
-        throwIfInstance(e.getCause(), Exception.class);
-        throwIfInstance(e.getCause(), RuntimeException.class);
-        throw new RuntimeException(e.getCause());
+      if (argLength < 0) {
+        return (R) method.invoke(target, args);
+      } else {
+        return (R) method.invoke(target, Arrays.copyOfRange(args, 0, argLength));
       }
     }
 
     public <R> R invoke(Object target, Object... args) {
       try {
-        return this.<R>invokeChecked(target, args);
+        return this.<R> invokeChecked(target, args);
+      } catch (RuntimeException re) {
+        throw re;
       } catch (Exception e) {
-        throwIfInstance(e, RuntimeException.class);
         throw new RuntimeException(e);
       }
     }
