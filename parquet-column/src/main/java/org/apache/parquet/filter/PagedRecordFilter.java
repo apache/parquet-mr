@@ -20,14 +20,16 @@ package org.apache.parquet.filter;
 
 import org.apache.parquet.column.ColumnReader;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 /**
  * Filter which will only materialize a page worth of results.
  */
-public final class PagedRecordFilter implements RecordFilter {
+public final class PagedRecordFilter implements UnboundRecordFilter {
 
   private final long startPos;
   private final long endPos;
-  private long currentPos = 0;
+  private AtomicLong currentPos = new AtomicLong(0);
 
   /**
    * Returns builder for creating a paged query.
@@ -36,12 +38,7 @@ public final class PagedRecordFilter implements RecordFilter {
    * @return a paged record filter
    */
   public static final UnboundRecordFilter page( final long startPos, final long pageSize ) {
-    return new UnboundRecordFilter() {
-      @Override
-      public RecordFilter bind(Iterable<ColumnReader> readers) {
-        return new PagedRecordFilter( startPos, pageSize );
-      }
-    };
+    return new PagedRecordFilter( startPos, pageSize );
   }
 
   /**
@@ -52,14 +49,25 @@ public final class PagedRecordFilter implements RecordFilter {
     this.endPos   = startPos + pageSize;
   }
 
-  /**
-   * Keeps track of how many times it is called. Only returns matches when the
-   * record number is in the range.
-   */
   @Override
-  public boolean isMatch() {
-    currentPos++;
-    return (( currentPos >= startPos ) && ( currentPos < endPos ));
+  public RecordFilter bind(Iterable<ColumnReader> readers) {
+    // Use inner class to access the currentPos for each group.
+    return new BoundedPagedRecordFilter();
   }
+
+  private final class BoundedPagedRecordFilter implements RecordFilter {
+
+    /**
+     * Keeps track of how many times it is called. Only returns matches when the
+     * record number is in the range.
+     */
+    @Override
+    public boolean isMatch() {
+      long pos = currentPos.incrementAndGet();
+      return (( pos >= startPos ) && ( pos < endPos ));
+    }
+
+  }
+
 
 }
