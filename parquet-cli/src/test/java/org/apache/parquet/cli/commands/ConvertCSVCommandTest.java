@@ -27,9 +27,8 @@ import java.io.IOException;
 import java.util.Arrays;
 
 public class ConvertCSVCommandTest extends CSVFileTest {
-  @Test
-  public void testConvertCSVCommand() throws IOException {
-    File file = csvFile();
+
+  private void testConvertCSVCommandWithInputFile(File file) throws IOException {
     ConvertCSVCommand command = new ConvertCSVCommand(createLogger());
     command.targets = Arrays.asList(file.getAbsolutePath());
     File output = new File(getTempFolder(), getClass().getSimpleName() + ".parquet");
@@ -37,5 +36,23 @@ public class ConvertCSVCommandTest extends CSVFileTest {
     command.setConf(new Configuration());
     Assert.assertEquals(0, command.run());
     Assert.assertTrue(output.exists());
+  }
+
+  @Test
+  public void testConvertCSVCommand() throws IOException {
+    File file = csvFile();
+    testConvertCSVCommandWithInputFile(file);
+  }
+
+  @Test
+  public void testConvertCSVCommandWithInputFileNameBeginningWithPeriod() throws IOException {
+    File file = csvFile("." + getClass().getSimpleName());
+    testConvertCSVCommandWithInputFile(file);
+  }
+
+  @Test
+  public void testConvertCSVCommandWithInputFileNameBeginningWithNumeric() throws IOException {
+    File file = csvFile("0" + getClass().getSimpleName());
+    testConvertCSVCommandWithInputFile(file);
   }
 }

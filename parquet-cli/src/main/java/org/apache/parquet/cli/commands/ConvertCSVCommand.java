@@ -42,6 +42,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import static org.apache.avro.generic.GenericData.Record;
 import static org.apache.parquet.column.ParquetProperties.WriterVersion.PARQUET_1_0;
@@ -155,6 +156,12 @@ public class ConvertCSVCommand extends BaseCommand {
         recordName = filename.substring(0, filename.indexOf("."));
       } else {
         recordName = filename;
+      }
+
+      if (recordName.isEmpty()) {
+        recordName = "_";
+      } else if (Pattern.matches("^[^A-Za-z_].*", recordName)) {
+        recordName = "_" + recordName.substring(1);
       }
 
       csvSchema = AvroCSV.inferNullableSchema(

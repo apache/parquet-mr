@@ -27,18 +27,18 @@ import java.io.IOException;
 
 public abstract class CSVFileTest extends FileTest {
 
-  @Before
-  public void setUp() throws IOException {
-    createTestCSVFile();
+  protected File csvFile() throws IOException {
+    return csvFile(getClass().getSimpleName());
   }
 
-  protected File csvFile() {
+  protected File csvFile(String basename) throws IOException {
     File tmpDir = getTempFolder();
-    return new File(tmpDir, getClass().getSimpleName() + ".csv");
+    File file = new File(tmpDir, basename + ".csv");
+    createTestCSVFile(file);
+    return file;
   }
 
-  private void createTestCSVFile() throws IOException {
-    File file = csvFile();
+  private void createTestCSVFile(File file) throws IOException {
     try (BufferedWriter writer = new BufferedWriter(new FileWriter(file))) {
       writer.write(String.format("%s,%s,%s\n",
         INT32_FIELD, INT64_FIELD, BINARY_FIELD));
