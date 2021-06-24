@@ -112,7 +112,7 @@ class DirectCodecFactory extends CodecFactory implements AutoCloseable {
   @Override
   protected BytesCompressor createCompressor(final CompressionCodecName codecName) {
 
-    CompressionCodec codec = getCodec(codecName);
+    CompressionCodec codec = getCodec(codecName,configuration);
     if (codec == null) {
       return new NoopCompressor();
     } else if (codecName == CompressionCodecName.SNAPPY) {
@@ -121,13 +121,13 @@ class DirectCodecFactory extends CodecFactory implements AutoCloseable {
     } else {
       // todo: create class similar to the SnappyCompressor for zlib and exclude it as
       // snappy is above since it also generates allocateDirect calls.
-      return new HeapBytesCompressor(codecName);
+      return new HeapBytesCompressor(codecName,configuration);
     }
   }
 
   @Override
   protected BytesDecompressor createDecompressor(final CompressionCodecName codecName) {
-    CompressionCodec codec = getCodec(codecName);
+    CompressionCodec codec = getCodec(codecName,configuration);
     if (codec == null) {
       return new NoopDecompressor();
     } else if (codecName == CompressionCodecName.SNAPPY ) {
@@ -197,9 +197,9 @@ class DirectCodecFactory extends CodecFactory implements AutoCloseable {
     private final Object decompressor;
     private HeapBytesDecompressor extraDecompressor;
     public FullDirectDecompressor(CompressionCodecName codecName){
-      CompressionCodec codec = getCodec(codecName);
+      CompressionCodec codec = getCodec(codecName,configuration);
       this.decompressor = DirectCodecPool.INSTANCE.codec(codec).borrowDirectDecompressor();
-      this.extraDecompressor = new HeapBytesDecompressor(codecName);
+      this.extraDecompressor = new HeapBytesDecompressor(codecName,configuration);
     }
 
     @Override
@@ -252,7 +252,7 @@ class DirectCodecFactory extends CodecFactory implements AutoCloseable {
 
     private HeapBytesDecompressor extraDecompressor;
     public SnappyDecompressor() {
-      this.extraDecompressor = new HeapBytesDecompressor(CompressionCodecName.SNAPPY);
+      this.extraDecompressor = new HeapBytesDecompressor(CompressionCodecName.SNAPPY,configuration);
     }
 
     @Override
