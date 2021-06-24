@@ -55,7 +55,6 @@
       <groupId>org.apache.pig</groupId>
       <artifactId>pig</artifactId>
       <version>${pig.version}</version>
-      <classifier>${pig.classifier}</classifier>
       <scope>provided</scope>
     </dependency>
     <dependency>
