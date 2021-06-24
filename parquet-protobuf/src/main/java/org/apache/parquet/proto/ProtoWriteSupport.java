@@ -552,7 +552,7 @@ public class ProtoWriteSupport<T extends MessageOrBuilder> extends WriteSupport<
     @Override
     final void writeRawValue(Object value) {
       ByteString byteString = (ByteString) value;
-      Binary binary = Binary.fromConstantByteArray(byteString.toByteArray());
+      Binary binary = Binary.fromConstantByteBuffer(byteString.asReadOnlyByteBuffer());
       recordConsumer.addBinary(binary);
     }
   }
