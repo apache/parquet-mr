@@ -42,6 +42,7 @@ public interface CompressionCodecFactory {
     BytesInput decompress(BytesInput bytes, int uncompressedSize) throws IOException;
     void decompress(ByteBuffer input, int compressedSize, ByteBuffer output, int uncompressedSize) throws IOException;
     void release();
+    boolean isPooled();
   }
 
 }

@@ -24,6 +24,8 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
@@ -32,6 +34,7 @@ import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.io.compress.CompressionOutputStream;
 import org.apache.hadoop.io.compress.Compressor;
 import org.apache.hadoop.io.compress.Decompressor;
+import org.apache.hadoop.io.compress.DoNotPool;
 import org.apache.hadoop.util.ReflectionUtils;
 
 import org.apache.parquet.bytes.ByteBufferAllocator;
@@ -46,6 +49,7 @@ public class CodecFactory implements CompressionCodecFactory {
 
   private final Map<CompressionCodecName, BytesCompressor> compressors = new HashMap<CompressionCodecName, BytesCompressor>();
   private final Map<CompressionCodecName, BytesDecompressor> decompressors = new HashMap<CompressionCodecName, BytesDecompressor>();
+  private final List<BytesDecompressor> unpooledDecompressors = new LinkedList<>();
 
   protected final Configuration configuration;
   protected final int pageSize;
@@ -127,6 +131,14 @@ public class CodecFactory implements CompressionCodecFactory {
         CodecPool.returnDecompressor(decompressor);
       }
     }
+
+    @Override
+    public boolean isPooled() {
+      if (decompressor != null) {
+        return !decompressor.getClass().isAnnotationPresent(DoNotPool.class);
+      }
+      return true;
+    }
   }
 
   /**
@@ -199,7 +211,11 @@ public class CodecFactory implements CompressionCodecFactory {
     BytesDecompressor decomp = decompressors.get(codecName);
     if (decomp == null) {
       decomp = createDecompressor(codecName);
-      decompressors.put(codecName, decomp);
+      if (decomp.isPooled()) {
+        decompressors.put(codecName, decomp);
+      } else {
+        unpooledDecompressors.add(decomp);
+      }
     }
     return decomp;
   }
@@ -254,6 +270,10 @@ public class CodecFactory implements CompressionCodecFactory {
       decompressor.release();
     }
     decompressors.clear();
+    for (BytesDecompressor decompressor : unpooledDecompressors) {
+      decompressor.release();
+    }
+    unpooledDecompressors.clear();
   }
 
   /**
