@@ -53,7 +53,7 @@ abstract public class ReadSupport<T> {
   }
 
   public static MessageType getSchemaForRead(MessageType fileMessageType, MessageType projectedMessageType) {
-    fileMessageType.checkContains(projectedMessageType);
+    fileMessageType.checkCompatibility(projectedMessageType);
     return projectedMessageType;
   }
 

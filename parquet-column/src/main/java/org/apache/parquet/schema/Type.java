@@ -355,6 +355,21 @@ abstract public class Type {
   }
 
   /**
+   * Checks compatibility with subType
+   * Allows subtype to have a less strict repetition
+   * For eg: a REQUIRED type is compatible with an OPTIONAL subType
+   *
+   * @param subType
+   */
+  void checkCompatibility(Type subType) {
+    if (!this.name.equals(subType.name)
+      || (this.repetition != subType.repetition && !this.repetition.isMoreRestrictiveThan(subType.repetition))) {
+      throw new InvalidRecordException(subType + " found: expected " + this);
+    }
+  }
+
+
+  /**
    *
    * @param path a list of groups to convert
    * @param converter logic to convert the tree

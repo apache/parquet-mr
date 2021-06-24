@@ -124,6 +124,15 @@ public final class MessageType extends GroupType {
     checkGroupContains(subType);
   }
 
+  @Override
+  public void checkCompatibility(Type subType) {
+    if (!(subType instanceof MessageType)) {
+      throw new InvalidRecordException(subType + " found: expected " + this);
+    }
+    checkGroupCompatibility(subType);
+  }
+
+
   public <T> T convertWith(TypeConverter<T> converter) {
     final ArrayList<GroupType> path = new ArrayList<>();
     path.add(this);

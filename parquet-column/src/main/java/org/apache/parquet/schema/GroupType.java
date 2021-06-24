@@ -339,6 +339,12 @@ public class GroupType extends Type {
     checkGroupContains(subType);
   }
 
+  @Override
+  void checkCompatibility(Type subType) {
+    super.checkCompatibility(subType);
+    checkGroupCompatibility(subType);
+  }
+
   void checkGroupContains(Type subType) {
     if (subType.isPrimitive()) {
       throw new InvalidRecordException(subType + " found: expected " + this);
@@ -349,6 +355,28 @@ public class GroupType extends Type {
       thisType.checkContains(otherType);
     }
   }
+
+  /**
+   * Checks compatibility with given subType
+   * Allows subType to have extra optional fields
+   *
+   * @param subType
+   */
+  void checkGroupCompatibility(Type subType) {
+    if (subType.isPrimitive()) {
+      throw new InvalidRecordException(subType + " found: expected " + this);
+    }
+    List<Type> fields = subType.asGroupType().getFields();
+    for (Type otherType : fields) {
+      if(this.containsField(otherType.getName())) {
+        Type thisType = this.getType(otherType.getName());
+        thisType.checkCompatibility(otherType);
+      } else if (otherType.getRepetition() == Repetition.REQUIRED) {
+        throw new InvalidRecordException(otherType.getName() + " not found in " + this);
+      }
+    }
+  }
+
 
   @Override
   <T> T convert(List<GroupType> path, TypeConverter<T> converter) {
