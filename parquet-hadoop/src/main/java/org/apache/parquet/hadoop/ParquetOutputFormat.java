@@ -438,6 +438,11 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   public RecordWriter<Void, T> getRecordWriter(Configuration conf, Path file, CompressionCodecName codec, Mode mode)
         throws IOException, InterruptedException {
     final WriteSupport<T> writeSupport = getWriteSupport(conf);
+    // Delete output dir in case write empty records.
+    boolean skipEmpty = conf.getBoolean(SKIP_EMPTY_FILE, true);
+    if (skipEmpty) {
+      return new LazyRecordWriter<T>(conf, file, codec, writeSupport);
+    }
 
     ParquetProperties.Builder propsBuilder = ParquetProperties.builder()
         .withPageSize(getPageSize(conf))
