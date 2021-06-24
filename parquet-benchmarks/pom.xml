@@ -38,6 +38,11 @@
 
   <dependencies>
     <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-log4j12</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-encoding</artifactId>
       <version>${project.version}</version>
@@ -68,11 +73,6 @@
         <artifactId>jmh-generator-annprocess</artifactId>
         <version>${jmh.version}</version>
         <scope>provided</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-simple</artifactId>
-      <version>${slf4j.version}</version>
     </dependency>
     <dependency>
       <groupId>it.unimi.dsi</groupId>
