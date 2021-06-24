@@ -33,7 +33,7 @@
   <url>https://parquet.apache.org</url>
 
   <properties>
-    <arrow.version>0.10.0</arrow.version>
+    <arrow.version>2.0.0</arrow.version>
   </properties>
 
   <dependencies>
@@ -46,6 +46,7 @@
       <groupId>org.apache.arrow</groupId>
       <artifactId>arrow-memory</artifactId>
       <version>${arrow.version}</version>
+      <type>pom</type>
     </dependency>
     <dependency>
       <groupId>org.apache.arrow</groupId>
