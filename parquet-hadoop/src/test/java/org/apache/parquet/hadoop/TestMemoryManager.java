@@ -178,10 +178,10 @@ public class TestMemoryManager {
   }
 
   private long getTotalAllocation() {
-    Set<InternalParquetRecordWriter> writers = ParquetOutputFormat
+    Set<InternalParquetRecordWriter<?>> writers = ParquetOutputFormat
         .getMemoryManager().getWriterList().keySet();
     long total = 0;
-    for (InternalParquetRecordWriter writer : writers) {
+    for (InternalParquetRecordWriter<?> writer : writers) {
       total += writer.getRowGroupSizeThreshold();
     }
     return total;

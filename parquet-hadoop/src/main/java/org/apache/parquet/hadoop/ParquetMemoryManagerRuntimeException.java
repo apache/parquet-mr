@@ -16,27 +16,23 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.parquet;
+package org.apache.parquet.hadoop;
+
+import org.apache.parquet.ParquetRuntimeException;
 
 /**
- * The parent class for all runtime exceptions
+ * Signals that an exception of some sort has occurred with the Parquet Memory
+ * Manager.
+ *
+ * @see MemoryManager
  */
-abstract public class ParquetRuntimeException extends RuntimeException {
+public class ParquetMemoryManagerRuntimeException
+    extends ParquetRuntimeException {
+
   private static final long serialVersionUID = 1L;
 
-  public ParquetRuntimeException() {
-    super();
-  }
-
-  public ParquetRuntimeException(String message, Throwable cause) {
-    super(message, cause);
-  }
-
-  public ParquetRuntimeException(String message) {
+  public ParquetMemoryManagerRuntimeException(String message) {
     super(message);
   }
 
-  public ParquetRuntimeException(Throwable cause) {
-    super(cause);
-  }
 }
