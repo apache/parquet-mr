@@ -145,6 +145,14 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
   public static final String BLOOM_FILTERING_ENABLED = "parquet.filter.bloom.enabled";
 
   /**
+   * key to configure whether parquet reader should use async file reads.
+   */
+  public static final String ENABLE_ASYNC_IO_READER = "parquet.read.async.io.enabled";
+  /**
+   * key to configure whether parquet reader should read all column data in parallel
+   */
+  public static final String ENABLE_PARALLEL_COLUMN_READER = "parquet.read.parallel.columnreader.enabled";
+  /**
    * key to turn on or off task side metadata loading (default true)
    * if true then metadata is read on the task side and some tasks may finish immediately.
    * if false metadata is read on the client which is slower if there is a lot of metadata but tasks will only be spawn if there is work to do.

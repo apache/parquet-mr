@@ -46,12 +46,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.LongAccumulator;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.CRC32;
@@ -64,6 +63,7 @@ import org.apache.parquet.HadoopReadOptions;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.bytes.ByteBufferInputStream;
 import org.apache.parquet.bytes.BytesInput;
+import org.apache.parquet.bytes.SequenceByteBufferInputStream;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.DataPage;
 import org.apache.parquet.column.page.DataPageV1;
@@ -83,6 +83,7 @@ import org.apache.parquet.crypto.ParquetCryptoRuntimeException;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.filter2.compat.RowGroupFilter;
 import org.apache.parquet.format.BlockCipher;
+import org.apache.parquet.format.BlockCipher.Decryptor;
 import org.apache.parquet.format.BloomFilterHeader;
 import org.apache.parquet.format.DataPageHeader;
 import org.apache.parquet.format.DataPageHeaderV2;
@@ -125,6 +126,42 @@ public class ParquetFileReader implements Closeable {
   private static final Logger LOG = LoggerFactory.getLogger(ParquetFileReader.class);
 
   public static String PARQUET_READ_PARALLELISM = "parquet.metadata.read.parallelism";
+
+  public static int numProcessors = Runtime.getRuntime().availableProcessors();
+
+  // Thread pool to read column chunk data from disk. Applications should call setAsyncIOThreadPool
+  // to initialize this with their own implementations.
+  // Default initialization is useful only for testing
+  public static ExecutorService ioThreadPool = Executors.newCachedThreadPool(
+    r -> new Thread(r, "parquet-io"));
+
+  // Thread pool to process pages for multiple columns in parallel. Applications should call
+  // setAsyncProcessThreadPool to initialize this with their own implementations.
+  // Default initialization is useful only for testing
+  public static ExecutorService processThreadPool = Executors.newCachedThreadPool(
+    r -> new Thread(r, "parquet-process"));
+
+  public static void setAsyncIOThreadPool(ExecutorService ioPool, boolean shutdownCurrent) {
+    if (ioThreadPool != null && shutdownCurrent) {
+      ioThreadPool.shutdownNow();
+    }
+    ioThreadPool = ioPool;
+  }
+
+  public static void setAsyncProcessThreadPool(ExecutorService processPool, boolean shutdownCurrent) {
+    if (processThreadPool != null && shutdownCurrent) {
+      processThreadPool.shutdownNow();
+    }
+    processThreadPool = processPool;
+  }
+
+  public static void shutdownAsyncIOThreadPool() {
+    ioThreadPool.shutdownNow();
+  }
+
+  public static void shutdownAsyncProcessThreadPool() {
+    processThreadPool.shutdownNow();
+  }
 
   private final ParquetMetadataConverter converter;
 
@@ -659,6 +696,8 @@ public class ParquetFileReader implements Closeable {
   }
 
   protected final SeekableInputStream f;
+  // input streams opened in the async mode
+  protected final List<SeekableInputStream> inputStreamList = new ArrayList<>();
   private final InputFile file;
   private final ParquetReadOptions options;
   private final Map<ColumnPath, ColumnDescriptor> paths = new HashMap<>();
@@ -796,6 +835,30 @@ public class ParquetFileReader implements Closeable {
     this.crc = options.usePageChecksumVerification() ? new CRC32() : null;
   }
 
+  private boolean isAsyncIOReaderEnabled(){
+    if (options.isAsyncIOReaderEnabled() ) {
+      if (ioThreadPool != null) {
+        return true;
+      } else {
+        LOG.warn("Parquet async IO is configured but the IO thread pool has not been " +
+          "initialized. Configuration is being ignored");
+      }
+    }
+    return false;
+  }
+
+  private boolean isParallelColumnReaderEnabled(){
+    if (options.isParallelColumnReaderEnabled() ) {
+      if (processThreadPool != null) {
+        return true;
+      } else {
+        LOG.warn("Parallel column reading is configured but the process thread pool has " +
+          "not been initialized. Configuration is being ignored");
+      }
+    }
+    return false;
+  }
+
   private static <T> List<T> listWithNulls(int size) {
     return new ArrayList<>(Collections.nCopies(size, null));
   }
@@ -910,6 +973,9 @@ public class ParquetFileReader implements Closeable {
     if (rowGroup == null) {
       return null;
     }
+    if (this.currentRowGroup != null) {
+      this.currentRowGroup.close();
+    }
     this.currentRowGroup = rowGroup;
     // avoid re-reading bytes the dictionary reader is used after this call
     if (nextDictionaryReader != null) {
@@ -937,6 +1003,10 @@ public class ParquetFileReader implements Closeable {
       ColumnPath pathKey = mc.getPath();
       ColumnDescriptor columnDescriptor = paths.get(pathKey);
       if (columnDescriptor != null) {
+        // If async, we need a new stream for every column
+        if (isAsyncIOReaderEnabled() || isParallelColumnReaderEnabled()) {
+          currentParts = null;
+        }
         BenchmarkCounter.incrementTotalBytes(mc.getTotalSize());
         long startingPos = mc.getStartingPos();
         // first part or not consecutive => new list
@@ -950,7 +1020,13 @@ public class ParquetFileReader implements Closeable {
     // actually read all the chunks
     ChunkListBuilder builder = new ChunkListBuilder(block.getRowCount());
     for (ConsecutivePartList consecutiveChunks : allParts) {
-      consecutiveChunks.readAll(f, builder);
+      if(isAsyncIOReaderEnabled()) {
+        SeekableInputStream is = file.newStream();
+        consecutiveChunks.readAll(is, builder);
+        inputStreamList.add(is);
+      } else {
+        consecutiveChunks.readAll(f, builder);
+      }
     }
     for (Chunk chunk : builder.build()) {
       readChunkPages(chunk, block, rowGroup);
@@ -1030,7 +1106,9 @@ public class ParquetFileReader implements Closeable {
       // All rows are matching -> fall back to the non-filtering path
       return readNextRowGroup();
     }
-
+    if (this.currentRowGroup != null) {
+      this.currentRowGroup.close();
+    }
     this.currentRowGroup = internalReadFilteredRowGroup(block, rowRanges, getColumnIndexStore(currentBlock));
 
     // avoid re-reading bytes the dictionary reader is used after this call
@@ -1053,6 +1131,10 @@ public class ParquetFileReader implements Closeable {
       ColumnPath pathKey = mc.getPath();
       ColumnDescriptor columnDescriptor = paths.get(pathKey);
       if (columnDescriptor != null) {
+        // If async, we need a new stream for every column
+        if (isAsyncIOReaderEnabled() || isParallelColumnReaderEnabled()) {
+          currentParts = null;
+        }
         OffsetIndex offsetIndex = ciStore.getOffsetIndex(mc.getPath());
 
         OffsetIndex filteredOffsetIndex = filterOffsetIndex(offsetIndex, rowRanges,
@@ -1072,9 +1154,22 @@ public class ParquetFileReader implements Closeable {
         }
       }
     }
+    String mode;
     // actually read all the chunks
-    for (ConsecutivePartList consecutiveChunks : allParts) {
-      consecutiveChunks.readAll(f, builder);
+    if (isAsyncIOReaderEnabled()) {
+        mode = "ASYNC";
+      for (ConsecutivePartList consecutiveChunks : allParts) {
+        SeekableInputStream is = file.newStream();
+        LOG.debug("{}: READING Consecutive chunk: {}", mode, consecutiveChunks);
+        consecutiveChunks.readAll(is, builder);
+        inputStreamList.add(is);
+      }
+    } else {
+      for (ConsecutivePartList consecutiveChunks : allParts) {
+        mode = "SYNC";
+        LOG.debug("{}: READING Consecutive chunk: {}", mode, consecutiveChunks);
+        consecutiveChunks.readAll(f, builder);
+      }
     }
     for (Chunk chunk : builder.build()) {
       readChunkPages(chunk, block, rowGroup);
@@ -1377,7 +1472,14 @@ public class ParquetFileReader implements Closeable {
       if (f != null) {
         f.close();
       }
+      if (this.currentRowGroup != null) {
+        this.currentRowGroup.close();
+      }
+      for (SeekableInputStream is : inputStreamList) {
+        is.close();
+      }
     } finally {
+      //TODO: make sure that any outstanding io tasks submitted by this reader have been cancelled.
       options.getCodecFactory().release();
     }
   }
@@ -1387,8 +1489,13 @@ public class ParquetFileReader implements Closeable {
    * result of the column-index based filtering when some pages might be skipped at reading.
    */
   private class ChunkListBuilder {
+    // ChunkData is backed by either a list of buffers or a list of strams
+    // It's a mistake to have both lists populated
     private class ChunkData {
+      // Used for synchronous reads
       final List<ByteBuffer> buffers = new ArrayList<>();
+      // Used for asynchronous reads
+      final List<ByteBufferInputStream> streams = new ArrayList<>();
       OffsetIndex offsetIndex;
     }
 
@@ -1399,6 +1506,12 @@ public class ParquetFileReader implements Closeable {
 
     public ChunkListBuilder(long rowCount) {
       this.rowCount = rowCount;
+    }
+
+    void add(ChunkDescriptor descriptor, ByteBufferInputStream stream, SeekableInputStream f) {
+      map.computeIfAbsent(descriptor, d -> new ChunkData()).streams.add(stream);
+      lastDescriptor = descriptor;
+      this.f = f;
     }
 
     void add(ChunkDescriptor descriptor, List<ByteBuffer> buffers, SeekableInputStream f) {
@@ -1417,11 +1530,21 @@ public class ParquetFileReader implements Closeable {
       for (Entry<ChunkDescriptor, ChunkData> entry : entries) {
         ChunkDescriptor descriptor = entry.getKey();
         ChunkData data = entry.getValue();
+        ByteBufferInputStream byteBufferInputStream;
+        if (isAsyncIOReaderEnabled()) {
+          // For async reads, we use a SequenceByeTeBufferInputStream instead of a ByteBufferInputStream
+          // because calling sliceBuffers in the latter blocks until all the buffers are read (effectively
+          // nullifying the async read) while the former blocks only if the next buffer is unavailable.
+          byteBufferInputStream = new SequenceByteBufferInputStream(data.streams);
+        } else {
+          byteBufferInputStream = ByteBufferInputStream.wrap(data.buffers);
+        }
         if (descriptor.equals(lastDescriptor)) {
           // because of a bug, the last chunk might be larger than descriptor.size
-          chunks.add(new WorkaroundChunk(lastDescriptor, data.buffers, f, data.offsetIndex, rowCount));
+          chunks.add(new WorkaroundChunk(lastDescriptor, byteBufferInputStream, f, data.offsetIndex,
+            rowCount));
         } else {
-          chunks.add(new Chunk(descriptor, data.buffers, data.offsetIndex, rowCount));
+          chunks.add(new Chunk(descriptor, byteBufferInputStream, data.offsetIndex, rowCount));
         }
       }
       return chunks;
@@ -1440,12 +1563,12 @@ public class ParquetFileReader implements Closeable {
 
     /**
      * @param descriptor descriptor for the chunk
-     * @param buffers ByteBuffers that contain the chunk
+     * @param stream the input stream to read from
      * @param offsetIndex the offset index for this column; might be null
      */
-    public Chunk(ChunkDescriptor descriptor, List<ByteBuffer> buffers, OffsetIndex offsetIndex, long rowCount) {
+    public Chunk(ChunkDescriptor descriptor, ByteBufferInputStream stream, OffsetIndex offsetIndex, long rowCount) {
       this.descriptor = descriptor;
-      this.stream = ByteBufferInputStream.wrap(buffers);
+      this.stream = stream;
       this.offsetIndex = offsetIndex;
       this.rowCount = rowCount;
     }
@@ -1455,6 +1578,8 @@ public class ParquetFileReader implements Closeable {
     }
 
     protected PageHeader readPageHeader(BlockCipher.Decryptor blockDecryptor, byte[] pageHeaderAAD) throws IOException {
+      String mode = (isAsyncIOReaderEnabled())? "ASYNC":"SYNC";
+      LOG.debug("{} READ HEADER: stream {}", mode, stream);
       return Util.readPageHeader(stream, blockDecryptor, pageHeaderAAD);
     }
 
@@ -1478,129 +1603,41 @@ public class ParquetFileReader implements Closeable {
       return readAllPages(null, null, null, -1, -1);
     }
 
+    /*
+     * If the async mode is enabled, this method will return immediately after reading the first page
+     * and for subsequent pages the caller will block on the queue of pages contained in the
+     * returned ColumnChunkPageReader object.
+     * If the read is synchronous, this method will return only after the queue is filled and the
+     * caller will not block on the queue.
+     * If there is only one page, the behaviour will be identical.
+     */
     public ColumnChunkPageReader readAllPages(BlockCipher.Decryptor headerBlockDecryptor, BlockCipher.Decryptor pageBlockDecryptor,
-        byte[] aadPrefix, int rowGroupOrdinal, int columnOrdinal) throws IOException {
-      List<DataPage> pagesInChunk = new ArrayList<>();
-      DictionaryPage dictionaryPage = null;
-      PrimitiveType type = getFileMetaData().getSchema()
-          .getType(descriptor.col.getPath()).asPrimitiveType();
-      long valuesCountReadSoFar = 0L;
-      int dataPageCountReadSoFar = 0;
-      byte[] dataPageHeaderAAD = null;
-      if (null != headerBlockDecryptor) {
-        dataPageHeaderAAD = AesCipher.createModuleAAD(aadPrefix, ModuleType.DataPageHeader, rowGroupOrdinal,
-            columnOrdinal, getPageOrdinal(dataPageCountReadSoFar));
-      }
-      while (hasMorePages(valuesCountReadSoFar, dataPageCountReadSoFar)) {
-        byte[] pageHeaderAAD = dataPageHeaderAAD;
-        if (null != headerBlockDecryptor) {
-          // Important: this verifies file integrity (makes sure dictionary page had not been removed)
-          if (null == dictionaryPage && descriptor.metadata.hasDictionaryPage()) {
-            pageHeaderAAD = AesCipher.createModuleAAD(aadPrefix, ModuleType.DictionaryPageHeader, rowGroupOrdinal, columnOrdinal, -1);
-          }  else {
-            int pageOrdinal = getPageOrdinal(dataPageCountReadSoFar);
-            AesCipher.quickUpdatePageAAD(dataPageHeaderAAD, pageOrdinal);
-          }
-        }
-        PageHeader pageHeader = readPageHeader(headerBlockDecryptor, pageHeaderAAD);
-        int uncompressedPageSize = pageHeader.getUncompressed_page_size();
-        int compressedPageSize = pageHeader.getCompressed_page_size();
-        final BytesInput pageBytes;
-        switch (pageHeader.type) {
-          case DICTIONARY_PAGE:
-            // there is only one dictionary page per column chunk
-            if (dictionaryPage != null) {
-              throw new ParquetDecodingException("more than one dictionary page in column " + descriptor.col);
-            }
-            pageBytes = this.readAsBytesInput(compressedPageSize);
-            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
-              verifyCrc(pageHeader.getCrc(), pageBytes.toByteArray(),
-                "could not verify dictionary page integrity, CRC checksum verification failed");
-            }
-            DictionaryPageHeader dicHeader = pageHeader.getDictionary_page_header();
-            dictionaryPage =
-                new DictionaryPage(
-                    pageBytes,
-                    uncompressedPageSize,
-                    dicHeader.getNum_values(),
-                    converter.getEncoding(dicHeader.getEncoding())
-                    );
-            // Copy crc to new page, used for testing
-            if (pageHeader.isSetCrc()) {
-              dictionaryPage.setCrc(pageHeader.getCrc());
-            }
-            break;
-          case DATA_PAGE:
-            DataPageHeader dataHeaderV1 = pageHeader.getData_page_header();
-            pageBytes = this.readAsBytesInput(compressedPageSize);
-            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
-              verifyCrc(pageHeader.getCrc(), pageBytes.toByteArray(),
-                "could not verify page integrity, CRC checksum verification failed");
-            }
-            DataPageV1 dataPageV1 = new DataPageV1(
-              pageBytes,
-              dataHeaderV1.getNum_values(),
-              uncompressedPageSize,
-              converter.fromParquetStatistics(
-                getFileMetaData().getCreatedBy(),
-                dataHeaderV1.getStatistics(),
-                type),
-              converter.getEncoding(dataHeaderV1.getRepetition_level_encoding()),
-              converter.getEncoding(dataHeaderV1.getDefinition_level_encoding()),
-              converter.getEncoding(dataHeaderV1.getEncoding()));
-            // Copy crc to new page, used for testing
-            if (pageHeader.isSetCrc()) {
-              dataPageV1.setCrc(pageHeader.getCrc());
-            }
-            pagesInChunk.add(dataPageV1);
-            valuesCountReadSoFar += dataHeaderV1.getNum_values();
-            ++dataPageCountReadSoFar;
-            break;
-          case DATA_PAGE_V2:
-            DataPageHeaderV2 dataHeaderV2 = pageHeader.getData_page_header_v2();
-            int dataSize = compressedPageSize - dataHeaderV2.getRepetition_levels_byte_length() - dataHeaderV2.getDefinition_levels_byte_length();
-            pagesInChunk.add(
-                new DataPageV2(
-                    dataHeaderV2.getNum_rows(),
-                    dataHeaderV2.getNum_nulls(),
-                    dataHeaderV2.getNum_values(),
-                    this.readAsBytesInput(dataHeaderV2.getRepetition_levels_byte_length()),
-                    this.readAsBytesInput(dataHeaderV2.getDefinition_levels_byte_length()),
-                    converter.getEncoding(dataHeaderV2.getEncoding()),
-                    this.readAsBytesInput(dataSize),
-                    uncompressedPageSize,
-                    converter.fromParquetStatistics(
-                        getFileMetaData().getCreatedBy(),
-                        dataHeaderV2.getStatistics(),
-                        type),
-                    dataHeaderV2.isIs_compressed()
-                    ));
-            valuesCountReadSoFar += dataHeaderV2.getNum_values();
-            ++dataPageCountReadSoFar;
-            break;
-          default:
-            LOG.debug("skipping page of type {} of size {}", pageHeader.getType(), compressedPageSize);
-            stream.skipFully(compressedPageSize);
-            break;
-        }
-      }
-      if (offsetIndex == null && valuesCountReadSoFar != descriptor.metadata.getValueCount()) {
-        // Would be nice to have a CorruptParquetFileException or something as a subclass?
-        throw new IOException(
-            "Expected " + descriptor.metadata.getValueCount() + " values in column chunk at " +
-            getPath() + " offset " + descriptor.metadata.getFirstDataPageOffset() +
-            " but got " + valuesCountReadSoFar + " values instead over " + pagesInChunk.size()
-            + " pages ending at file offset " + (descriptor.fileOffset + stream.position()));
-      }
+        byte[] aadPrefix, int rowGroupOrdinal, int columnOrdinal)
+      throws IOException {
       BytesInputDecompressor decompressor = options.getCodecFactory().getDecompressor(descriptor.metadata.getCodec());
+      DictionaryPage dictionaryPage;
+      LinkedBlockingDeque<Optional<DataPage>> pagesInChunk;
+
+      PageReader pageReader = new PageReader(this, currentBlock, headerBlockDecryptor,
+          pageBlockDecryptor, aadPrefix, rowGroupOrdinal, columnOrdinal, decompressor);
+
+      // Read the dictionary page;
+      pageReader.readOnePage();
+      dictionaryPage = pageReader.getDictionaryPage();
+      // if reading columns in parallel, we simply submit the read page task to the thread pool
+      // and continue (effectively to the next column).
+      if (isParallelColumnReaderEnabled()) {
+        pageReader.readAllRemainingPagesAsync();
+      } else {
+        pageReader.readAllRemainingPages();
+      }
+      pagesInChunk = pageReader.getPagesInChunk();
+
       return new ColumnChunkPageReader(decompressor, pagesInChunk, dictionaryPage, offsetIndex,
-        rowCount, pageBlockDecryptor, aadPrefix, rowGroupOrdinal, columnOrdinal);
+        this.descriptor.metadata.getValueCount(), rowCount,
+        pageBlockDecryptor, aadPrefix, rowGroupOrdinal, columnOrdinal, pageReader);
     }
 
-    private boolean hasMorePages(long valuesCountReadSoFar, int dataPageCountReadSoFar) {
-      return offsetIndex == null ? valuesCountReadSoFar < descriptor.metadata.getValueCount()
-          : dataPageCountReadSoFar < offsetIndex.getPageCount();
-    }
 
     private int getPageOrdinal(int dataPageCountReadSoFar) {
       if (null == offsetIndex) {
@@ -1610,15 +1647,26 @@ public class ParquetFileReader implements Closeable {
       return offsetIndex.getPageOrdinal(dataPageCountReadSoFar);
     }
 
+
     /**
      * @param size the size of the page
      * @return the page
      * @throws IOException if there is an error while reading from the file stream
      */
     public BytesInput readAsBytesInput(int size) throws IOException {
+      String mode = (isAsyncIOReaderEnabled())? "ASYNC":"SYNC";
+      LOG.debug("{} READ BYTES INPUT: stream {}", mode, stream);
       return BytesInput.from(stream.sliceBuffers(size));
     }
 
+    @Override
+    public String toString() {
+      return "Chunk{" +
+        "descriptor=" + descriptor +
+        ", stream=" + stream +
+        ", offsetIndex=" + offsetIndex +
+        '}';
+    }
   }
 
   /**
@@ -1632,8 +1680,8 @@ public class ParquetFileReader implements Closeable {
      * @param descriptor the descriptor of the chunk
      * @param f the file stream positioned at the end of this chunk
      */
-    private WorkaroundChunk(ChunkDescriptor descriptor, List<ByteBuffer> buffers, SeekableInputStream f, OffsetIndex offsetIndex, long rowCount) {
-      super(descriptor, buffers, offsetIndex, rowCount);
+    private WorkaroundChunk(ChunkDescriptor descriptor, ByteBufferInputStream stream, SeekableInputStream f, OffsetIndex offsetIndex, long rowCount) {
+      super(descriptor, stream, offsetIndex, rowCount);
       this.f = f;
     }
 
@@ -1667,6 +1715,10 @@ public class ParquetFileReader implements Closeable {
 
         List<ByteBuffer> streamBuffers = stream.sliceBuffers(available);
 
+        // do we make this async? If the async reader has completed reading its last
+        // buffer, the file stream will be positioned at the right place and this will work just
+        // fine. However this means that for some cases, the missing bytes of the last chunk will
+        // be read synchronously irrespective of the async read mode.
         ByteBuffer lastBuffer = ByteBuffer.allocate(missingBytes);
         f.readFully(lastBuffer);
 
@@ -1726,6 +1778,16 @@ public class ParquetFileReader implements Closeable {
         return false;
       }
     }
+
+    @Override
+    public String toString() {
+      return "ChunkDescriptor{" +
+        "col=" + col +
+        ", metadata=" + metadata +
+        ", fileOffset=" + fileOffset +
+        ", size=" + size +
+        '}';
+    }
   }
 
   /**
@@ -1756,12 +1818,16 @@ public class ParquetFileReader implements Closeable {
     }
 
     /**
-     * @param f file to read the chunks from
      * @param builder used to build chunk list to read the pages for the different columns
      * @throws IOException if there is an error while reading from the stream
      */
-    public void readAll(SeekableInputStream f, ChunkListBuilder builder) throws IOException {
-      f.seek(offset);
+    public void readAll(SeekableInputStream is, ChunkListBuilder builder) throws IOException {
+      // Use a new file input stream for every set of consecutive chunks.
+      // If we are reading synchronously, we don't want the input stream to seek back
+      // forth in the file for every set of chunks. Seeking backwards can cause a performance drop.
+      // If we read in async mode many such sets could be read in parallel, and we don't want the
+      // same input stream shared between threads.
+      is.seek(offset);
 
       int fullAllocations = Math.toIntExact(length / options.getMaxAllocationSize());
       int lastAllocationSize = Math.toIntExact(length % options.getMaxAllocationSize());
@@ -1777,16 +1843,36 @@ public class ParquetFileReader implements Closeable {
         buffers.add(options.getAllocator().allocate(lastAllocationSize));
       }
 
+      ByteBufferInputStream stream;
+      if (!isAsyncIOReaderEnabled()) {
+        // pre-read the files into the allocated buffers
+        long startTime = System.nanoTime();
       for (ByteBuffer buffer : buffers) {
-        f.readFully(buffer);
+          is.readFully(buffer);
         buffer.flip();
       }
-
+        long timeSpent = System.nanoTime() - startTime;
+        LOG.debug("SYNC Stream: READ - {}", timeSpent/1000.0);
+        stream = ByteBufferInputStream.wrap(buffers);
+      } else {
+        // The underlying implementation will read the data from the input stream
+        // asynchronously.
+        stream = ByteBufferInputStream.wrapAsync(ioThreadPool, is, buffers);
+      }
       // report in a counter the data we just scanned
       BenchmarkCounter.incrementBytesRead(length);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffers);
       for (final ChunkDescriptor descriptor : chunks) {
-        builder.add(descriptor, stream.sliceBuffers(descriptor.size), f);
+        if (!isAsyncIOReaderEnabled()) {
+          // stream.sliceBuffers is a *blocking* call and assumes that all data has been read
+          builder.add(descriptor, stream.sliceBuffers(descriptor.size), is);
+          LOG.debug("SYNC: Added to builder -  chunk slice  {} ", descriptor);
+        } else {
+          // Preconditions:
+          //  1) The stream is an Async stream.
+          //  2) Each column chunk has an independent stream.
+          builder.add(descriptor, stream, is);
+          LOG.debug("ASYNC: Added to builder -  chunk slice  {} , stream {}", descriptor, stream);
+        }
       }
     }
 
@@ -1796,5 +1882,314 @@ public class ParquetFileReader implements Closeable {
     public long endPos() {
       return offset + length;
     }
+
+    @Override
+    public String toString() {
+      return "ConsecutivePartList{" +
+        "offset=" + offset +
+        ", length=" + length +
+        ", chunks=" + chunks +
+        '}';
+    }
   }
+
+  /**
+   * Encapsulates the reading of a single page.
+   */
+  public class PageReader implements Closeable {
+    Chunk chunk;
+    int currentBlock;
+    BlockCipher.Decryptor headerBlockDecryptor;
+    BlockCipher.Decryptor pageBlockDecryptor;
+    byte[] aadPrefix;
+    int rowGroupOrdinal;
+    int columnOrdinal;
+
+    //state
+    LinkedBlockingDeque<Optional<DataPage>> pagesInChunk = new LinkedBlockingDeque<>();
+    DictionaryPage dictionaryPage = null;
+    int pageIndex = 0;
+    long valuesCountReadSoFar = 0;
+    int dataPageCountReadSoFar = 0;
+
+    // derived
+    PrimitiveType type;
+    final byte[] dataPageAAD;
+    final byte[] dictionaryPageAAD;
+    byte[] dataPageHeaderAAD = null;
+
+    BytesInputDecompressor decompressor;
+
+    ConcurrentLinkedQueue<Future<Void>> readFutures = new ConcurrentLinkedQueue<>();
+
+    LongAdder totalTimeReadOnePage = new LongAdder();
+    LongAdder totalCountReadOnePage = new LongAdder();
+    LongAccumulator maxTimeReadOnePage = new LongAccumulator(Long::max, 0L);
+    LongAdder totalTimeBlockedPagesInChunk = new LongAdder();
+    LongAdder totalCountBlockedPagesInChunk = new LongAdder();
+    LongAccumulator maxTimeBlockedPagesInChunk = new LongAccumulator(Long::max, 0L);
+
+    public PageReader(Chunk chunk, int currentBlock, Decryptor headerBlockDecryptor,
+      Decryptor pageBlockDecryptor, byte[] aadPrefix, int rowGroupOrdinal, int columnOrdinal,
+      BytesInputDecompressor decompressor
+      ) {
+      this.chunk = chunk;
+      this.currentBlock = currentBlock;
+      this.headerBlockDecryptor = headerBlockDecryptor;
+      this.pageBlockDecryptor = pageBlockDecryptor;
+      this.aadPrefix = aadPrefix;
+      this.rowGroupOrdinal = rowGroupOrdinal;
+      this.columnOrdinal = columnOrdinal;
+      this.decompressor = decompressor;
+
+      this.type = getFileMetaData().getSchema()
+        .getType(chunk.descriptor.col.getPath()).asPrimitiveType();
+
+      if (null != headerBlockDecryptor) {
+        dataPageHeaderAAD = AesCipher.createModuleAAD(aadPrefix, ModuleType.DataPageHeader,
+          rowGroupOrdinal,
+          columnOrdinal, chunk.getPageOrdinal(dataPageCountReadSoFar));
+      }
+      if (null != pageBlockDecryptor) {
+        dataPageAAD = AesCipher.createModuleAAD(aadPrefix, ModuleType.DataPage, rowGroupOrdinal,
+          columnOrdinal, 0);
+        dictionaryPageAAD = AesCipher.createModuleAAD(aadPrefix, ModuleType.DictionaryPage,
+          rowGroupOrdinal, columnOrdinal, -1);
+      } else {
+        dataPageAAD = null;
+        dictionaryPageAAD = null;
+      }
+    }
+
+
+    public DictionaryPage getDictionaryPage(){
+      return this.dictionaryPage;
+    }
+
+    public LinkedBlockingDeque<Optional<DataPage>> getPagesInChunk(){
+      return this.pagesInChunk;
+    }
+
+    void readAllRemainingPagesAsync() {
+      readFutures.offer(processThreadPool.submit(new PageReaderTask(this)));
+    }
+
+    void readAllRemainingPages() throws IOException {
+      while(hasMorePages(valuesCountReadSoFar, dataPageCountReadSoFar)) {
+        readOnePage();
+      }
+      if (chunk.offsetIndex == null && valuesCountReadSoFar != chunk.descriptor.metadata.getValueCount()) {
+        // Would be nice to have a CorruptParquetFileException or something as a subclass?
+        throw new IOException(
+            "Expected " + chunk.descriptor.metadata.getValueCount() + " values in column chunk at " +
+            getPath() + " offset " + chunk.descriptor.metadata.getFirstDataPageOffset() +
+            " but got " + valuesCountReadSoFar + " values instead over " + pagesInChunk.size()
+            + " pages ending at file offset " + (chunk.descriptor.fileOffset + chunk.stream.position()));
+      }
+      try {
+        pagesInChunk.put(Optional.empty()); // add a marker for end of data
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Interrupted while reading page data", e);
+      }
+    }
+
+    void readOnePage() throws IOException {
+      long startRead = System.nanoTime();
+      try {
+        byte[] pageHeaderAAD = dataPageHeaderAAD;
+        if (null != headerBlockDecryptor) {
+          // Important: this verifies file integrity (makes sure dictionary page had not been removed)
+          if (null == dictionaryPage && chunk.descriptor.metadata.hasDictionaryPage()) {
+            pageHeaderAAD = AesCipher.createModuleAAD(aadPrefix, ModuleType.DictionaryPageHeader,
+              rowGroupOrdinal, columnOrdinal, -1);
+          } else {
+            int pageOrdinal = chunk.getPageOrdinal(dataPageCountReadSoFar);
+            AesCipher.quickUpdatePageAAD(dataPageHeaderAAD, pageOrdinal);
+          }
+        }
+        PageHeader pageHeader = chunk.readPageHeader(headerBlockDecryptor, pageHeaderAAD);
+        int uncompressedPageSize = pageHeader.getUncompressed_page_size();
+        int compressedPageSize = pageHeader.getCompressed_page_size();
+        final BytesInput pageBytes;
+        switch (pageHeader.type) {
+          case DICTIONARY_PAGE:
+            // there is only one dictionary page per column chunk
+            if (dictionaryPage != null) {
+              throw new ParquetDecodingException(
+                "more than one dictionary page in column " + chunk.descriptor.col);
+            }
+            pageBytes = chunk.readAsBytesInput(compressedPageSize);
+            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
+              chunk.verifyCrc(pageHeader.getCrc(), pageBytes.toByteArray(),
+                "could not verify dictionary page integrity, CRC checksum verification failed");
+            }
+            DictionaryPageHeader dicHeader = pageHeader.getDictionary_page_header();
+            DictionaryPage compressedDictionaryPage =
+              new DictionaryPage(
+                pageBytes,
+                uncompressedPageSize,
+                dicHeader.getNum_values(),
+                converter.getEncoding(dicHeader.getEncoding())
+              );
+            // Copy crc to new page, used for testing
+            if (pageHeader.isSetCrc()) {
+              compressedDictionaryPage.setCrc(pageHeader.getCrc());
+            }
+            dictionaryPage = compressedDictionaryPage;
+            break;
+          case DATA_PAGE:
+            DataPageHeader dataHeaderV1 = pageHeader.getData_page_header();
+            pageBytes = chunk.readAsBytesInput(compressedPageSize);
+            if (null != pageBlockDecryptor) {
+              AesCipher.quickUpdatePageAAD(dataPageAAD, chunk.getPageOrdinal(pageIndex));
+            }
+            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
+              chunk.verifyCrc(pageHeader.getCrc(), pageBytes.toByteArray(),
+                "could not verify page integrity, CRC checksum verification failed");
+            }
+            DataPageV1 dataPageV1 = new DataPageV1(
+              pageBytes,
+              dataHeaderV1.getNum_values(),
+              uncompressedPageSize,
+              converter.fromParquetStatistics(
+                getFileMetaData().getCreatedBy(),
+                dataHeaderV1.getStatistics(),
+                type),
+              converter.getEncoding(dataHeaderV1.getRepetition_level_encoding()),
+              converter.getEncoding(dataHeaderV1.getDefinition_level_encoding()),
+              converter.getEncoding(dataHeaderV1.getEncoding()));
+            // Copy crc to new page, used for testing
+            if (pageHeader.isSetCrc()) {
+              dataPageV1.setCrc(pageHeader.getCrc());
+            }
+            writePage(dataPageV1);
+            valuesCountReadSoFar += dataHeaderV1.getNum_values();
+            ++dataPageCountReadSoFar;
+            pageIndex++;
+            break;
+          case DATA_PAGE_V2:
+            DataPageHeaderV2 dataHeaderV2 = pageHeader.getData_page_header_v2();
+            int dataSize = compressedPageSize - dataHeaderV2.getRepetition_levels_byte_length()
+              - dataHeaderV2.getDefinition_levels_byte_length();
+            if (null != pageBlockDecryptor) {
+              AesCipher.quickUpdatePageAAD(dataPageAAD, chunk.getPageOrdinal(pageIndex));
+            }
+            DataPage dataPageV2 = new DataPageV2(
+              dataHeaderV2.getNum_rows(),
+              dataHeaderV2.getNum_nulls(),
+              dataHeaderV2.getNum_values(),
+              chunk.readAsBytesInput(dataHeaderV2.getRepetition_levels_byte_length()),
+              chunk.readAsBytesInput(dataHeaderV2.getDefinition_levels_byte_length()),
+              converter.getEncoding(dataHeaderV2.getEncoding()),
+              chunk.readAsBytesInput(dataSize),
+              uncompressedPageSize,
+              converter.fromParquetStatistics(
+                getFileMetaData().getCreatedBy(),
+                dataHeaderV2.getStatistics(),
+                type),
+              dataHeaderV2.isIs_compressed()
+            );
+            writePage(dataPageV2);
+            valuesCountReadSoFar += dataHeaderV2.getNum_values();
+            ++dataPageCountReadSoFar;
+            pageIndex++;
+            break;
+          default:
+            LOG.debug("skipping page of type {} of size {}", pageHeader.getType(),
+              compressedPageSize);
+            chunk.stream.skipFully(compressedPageSize);
+            break;
+        }
+      } catch (Exception e) {
+        LOG.info("Exception while reading one more page for: [{} ]: {} ", Thread.currentThread().getName(), this);
+        throw e;
+      }
+      finally {
+        long timeSpentInRead = System.nanoTime() - startRead;
+        totalCountReadOnePage.add(1);
+        totalTimeReadOnePage.add(timeSpentInRead);
+        maxTimeReadOnePage.accumulate(timeSpentInRead);
+      }
+    }
+
+    private void writePage(DataPage page){
+      long writeStart = System.nanoTime();
+      try {
+        pagesInChunk.put(Optional.of(page));
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Interrupted while reading page data", e);
+      }
+      long timeSpent = System.nanoTime() - writeStart;
+      totalTimeBlockedPagesInChunk.add(timeSpent);
+      totalCountBlockedPagesInChunk.add(1);
+      maxTimeBlockedPagesInChunk.accumulate(timeSpent);
+    }
+
+    private boolean hasMorePages(long valuesCountReadSoFar, int dataPageCountReadSoFar) {
+      return chunk.offsetIndex == null ? valuesCountReadSoFar < chunk.descriptor.metadata.getValueCount()
+        : dataPageCountReadSoFar < chunk.offsetIndex.getPageCount();
+    }
+
+    @Override
+    public void close() throws IOException {
+      Future<Void> readResult;
+      while(!readFutures.isEmpty()) {
+        try {
+          readResult = readFutures.poll();
+          readResult.get();
+          if(!readResult.isDone() && !readResult.isCancelled()){
+            readResult.cancel(true);
+          } else {
+            readResult.get(1, TimeUnit.MILLISECONDS);
+          }
+        } catch (Exception e) {
+          // Do nothing
+        }
+      }
+      String mode = isParallelColumnReaderEnabled()?"ASYNC" : "SYNC";
+      LOG.debug("READ PAGE: {}, {}, {}, {}, {}, {}, {}", mode,
+        totalTimeReadOnePage.longValue() / 1000.0, totalCountReadOnePage.longValue(),
+        maxTimeReadOnePage.longValue() / 1000.0, totalTimeBlockedPagesInChunk.longValue() / 1000.0,
+        totalCountBlockedPagesInChunk.longValue(), maxTimeBlockedPagesInChunk.longValue() / 1000.0);
+    }
+
+    @Override
+    public String toString() {
+      return "PageReader{" +
+        "chunk=" + chunk +
+        ", currentBlock=" + currentBlock +
+        ", headerBlockDecryptor=" + headerBlockDecryptor +
+        ", pageBlockDecryptor=" + pageBlockDecryptor +
+        ", aadPrefix=" + Arrays.toString(aadPrefix) +
+        ", rowGroupOrdinal=" + rowGroupOrdinal +
+        ", columnOrdinal=" + columnOrdinal +
+        ", pagesInChunk=" + pagesInChunk +
+        ", dictionaryPage=" + dictionaryPage +
+        ", pageIndex=" + pageIndex +
+        ", valuesCountReadSoFar=" + valuesCountReadSoFar +
+        ", dataPageCountReadSoFar=" + dataPageCountReadSoFar +
+        ", type=" + type +
+        ", dataPageAAD=" + Arrays.toString(dataPageAAD) +
+        ", dictionaryPageAAD=" + Arrays.toString(dictionaryPageAAD) +
+        ", dataPageHeaderAAD=" + Arrays.toString(dataPageHeaderAAD) +
+        ", decompressor=" + decompressor +
+        '}';
+    }
+  }
+
+  private class PageReaderTask implements Callable<Void> {
+    PageReader pageReader;
+    PageReaderTask(PageReader pageReader) {
+      this.pageReader = pageReader;
+    }
+
+    @Override
+    public Void call() throws Exception {
+      pageReader.readAllRemainingPages();
+      return null;
+    }
+  }
+
 }

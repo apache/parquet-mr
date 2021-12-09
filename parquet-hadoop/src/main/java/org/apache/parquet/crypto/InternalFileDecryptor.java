@@ -61,10 +61,7 @@ public class InternalFileDecryptor {
 
   private BlockCipher.Decryptor getThriftModuleDecryptor(byte[] columnKey) {
     if (null == columnKey) { // Decryptor with footer key
-      if (null == aesGcmDecryptorWithFooterKey) {
-        aesGcmDecryptorWithFooterKey = ModuleCipherFactory.getDecryptor(AesMode.GCM, footerKey);
-      }
-      return aesGcmDecryptorWithFooterKey;
+      return ModuleCipherFactory.getDecryptor(AesMode.GCM, footerKey);
     } else { // Decryptor with column key
       return ModuleCipherFactory.getDecryptor(AesMode.GCM, columnKey);
     }
@@ -109,7 +106,7 @@ public class InternalFileDecryptor {
     return getThriftModuleDecryptor(null);
   }
 
-  public void setFileCryptoMetaData(EncryptionAlgorithm algorithm, 
+  public void setFileCryptoMetaData(EncryptionAlgorithm algorithm,
       boolean encryptedFooter, byte[] footerKeyMetaData) {
 
     // first use of the decryptor
@@ -198,7 +195,7 @@ public class InternalFileDecryptor {
         }
       }
     } else {
-      // re-use of the decryptor 
+      // re-use of the decryptor
       // check the crypto metadata.
       if (!this.algorithm.equals(algorithm)) {
         throw new ParquetCryptoRuntimeException("Decryptor re-use: Different algorithm");
@@ -216,7 +213,7 @@ public class InternalFileDecryptor {
     }
   }
 
-  public InternalColumnDecryptionSetup setColumnCryptoMetadata(ColumnPath path, boolean encrypted, 
+  public InternalColumnDecryptionSetup setColumnCryptoMetadata(ColumnPath path, boolean encrypted,
       boolean encryptedWithFooterKey, byte[] keyMetadata, int columnOrdinal) {
 
     if (!fileCryptoMetaDataProcessed) {
@@ -246,7 +243,7 @@ public class InternalFileDecryptor {
         if (null == footerKey) {
           throw new ParquetCryptoRuntimeException("Column " + path + " is encrypted with NULL footer key");
         }
-        columnDecryptionSetup = new InternalColumnDecryptionSetup(path, true, true, 
+        columnDecryptionSetup = new InternalColumnDecryptionSetup(path, true, true,
             getDataModuleDecryptor(null), getThriftModuleDecryptor(null), columnOrdinal, null);
 
         if (LOG.isDebugEnabled()) {
@@ -265,7 +262,7 @@ public class InternalFileDecryptor {
         if (null == columnKeyBytes) {
           throw new ParquetCryptoRuntimeException("Column " + path + "is encrypted with NULL column key");
         }
-        columnDecryptionSetup = new InternalColumnDecryptionSetup(path, true, false, 
+        columnDecryptionSetup = new InternalColumnDecryptionSetup(path, true, false,
               getDataModuleDecryptor(columnKeyBytes), getThriftModuleDecryptor(columnKeyBytes), columnOrdinal, keyMetadata);
 
         if (LOG.isDebugEnabled()) {
