@@ -42,7 +42,6 @@ class AsyncMultiBufferInputStream extends MultiBufferInputStream {
   ExecutorService threadPool;
   LinkedBlockingQueue<Future<Void>> readFutures;
   boolean closed = false;
-  Exception ioException;
 
   LongAdder totalTimeBlocked = new LongAdder();
   LongAdder totalCountBlocked = new LongAdder();
@@ -66,11 +65,6 @@ class AsyncMultiBufferInputStream extends MultiBufferInputStream {
   private void checkState() {
     if (closed) {
       throw new RuntimeException("Stream is closed");
-    }
-    synchronized (this) {
-      if (ioException != null) {
-        throw new RuntimeException(ioException);
-      }
     }
   }
 
@@ -110,11 +104,6 @@ class AsyncMultiBufferInputStream extends MultiBufferInputStream {
         (putCompleted - putStart) / 1000.0);
       fetchIndex++;
     } catch (IOException e) {
-      // Save the exception so that the calling thread can check if something went wrong.
-      // checkState will throw an exception if the read task has failed.
-      synchronized(this) {
-        ioException = e;
-      }
       throw new RuntimeException(e);
     }
   }

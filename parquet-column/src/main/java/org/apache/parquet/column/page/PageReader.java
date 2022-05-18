@@ -18,12 +18,13 @@
  */
 package org.apache.parquet.column.page;
 
+import java.io.Closeable;
 import java.io.IOException;
 
 /**
  * Reader for a sequence a page from a given column chunk
  */
-public interface PageReader {
+public interface PageReader extends Closeable {
 
  /**
   * @return the dictionary page in that chunk or null if none
