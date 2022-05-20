@@ -36,16 +36,16 @@ class AsyncMultiBufferInputStream extends MultiBufferInputStream {
 
   private static final Logger LOG = LoggerFactory.getLogger(AsyncMultiBufferInputStream.class);
 
-  final SeekableInputStream fileInputStream;
-  int fetchIndex = 0;
-  int readIndex = 0;
-  ExecutorService threadPool;
-  LinkedBlockingQueue<Future<Void>> readFutures;
-  boolean closed = false;
+  private int fetchIndex = 0;
+  private final SeekableInputStream fileInputStream;
+  private int readIndex = 0;
+  private ExecutorService threadPool;
+  private LinkedBlockingQueue<Future<Void>> readFutures;
+  private boolean closed = false;
 
-  LongAdder totalTimeBlocked = new LongAdder();
-  LongAdder totalCountBlocked = new LongAdder();
-  LongAccumulator maxTimeBlocked = new LongAccumulator(Long::max, 0L);
+  private LongAdder totalTimeBlocked = new LongAdder();
+  private LongAdder totalCountBlocked = new LongAdder();
+  private LongAccumulator maxTimeBlocked = new LongAccumulator(Long::max, 0L);
 
   AsyncMultiBufferInputStream(ExecutorService threadPool, SeekableInputStream fileInputStream,
     List<ByteBuffer> buffers) {

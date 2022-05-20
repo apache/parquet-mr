@@ -1897,37 +1897,37 @@ public class ParquetFileReader implements Closeable {
    * Encapsulates the reading of a single page.
    */
   public class PageReader implements Closeable {
-    Chunk chunk;
-    int currentBlock;
-    BlockCipher.Decryptor headerBlockDecryptor;
-    BlockCipher.Decryptor pageBlockDecryptor;
-    byte[] aadPrefix;
-    int rowGroupOrdinal;
-    int columnOrdinal;
+    private final Chunk chunk;
+    private final int currentBlock;
+    private final BlockCipher.Decryptor headerBlockDecryptor;
+    private final BlockCipher.Decryptor pageBlockDecryptor;
+    private final byte[] aadPrefix;
+    private final int rowGroupOrdinal;
+    private final int columnOrdinal;
 
     //state
-    LinkedBlockingDeque<Optional<DataPage>> pagesInChunk = new LinkedBlockingDeque<>();
-    DictionaryPage dictionaryPage = null;
-    int pageIndex = 0;
-    long valuesCountReadSoFar = 0;
-    int dataPageCountReadSoFar = 0;
+    private final LinkedBlockingDeque<Optional<DataPage>> pagesInChunk = new LinkedBlockingDeque<>();
+    private DictionaryPage dictionaryPage = null;
+    private int pageIndex = 0;
+    private long valuesCountReadSoFar = 0;
+    private int dataPageCountReadSoFar = 0;
 
     // derived
-    PrimitiveType type;
-    final byte[] dataPageAAD;
-    final byte[] dictionaryPageAAD;
-    byte[] dataPageHeaderAAD = null;
+    private final PrimitiveType type;
+    private final byte[] dataPageAAD;
+    private final byte[] dictionaryPageAAD;
+    private byte[] dataPageHeaderAAD = null;
 
-    BytesInputDecompressor decompressor;
+    private final BytesInputDecompressor decompressor;
 
-    ConcurrentLinkedQueue<Future<Void>> readFutures = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<Future<Void>> readFutures = new ConcurrentLinkedQueue<>();
 
-    LongAdder totalTimeReadOnePage = new LongAdder();
-    LongAdder totalCountReadOnePage = new LongAdder();
-    LongAccumulator maxTimeReadOnePage = new LongAccumulator(Long::max, 0L);
-    LongAdder totalTimeBlockedPagesInChunk = new LongAdder();
-    LongAdder totalCountBlockedPagesInChunk = new LongAdder();
-    LongAccumulator maxTimeBlockedPagesInChunk = new LongAccumulator(Long::max, 0L);
+    private final LongAdder totalTimeReadOnePage = new LongAdder();
+    private final LongAdder totalCountReadOnePage = new LongAdder();
+    private final LongAccumulator maxTimeReadOnePage = new LongAccumulator(Long::max, 0L);
+    private final LongAdder totalTimeBlockedPagesInChunk = new LongAdder();
+    private final LongAdder totalCountBlockedPagesInChunk = new LongAdder();
+    private final LongAccumulator maxTimeBlockedPagesInChunk = new LongAccumulator(Long::max, 0L);
 
     public PageReader(Chunk chunk, int currentBlock, Decryptor headerBlockDecryptor,
       Decryptor pageBlockDecryptor, byte[] aadPrefix, int rowGroupOrdinal, int columnOrdinal,
@@ -2180,7 +2180,7 @@ public class ParquetFileReader implements Closeable {
   }
 
   private class PageReaderTask implements Callable<Void> {
-    PageReader pageReader;
+    final PageReader pageReader;
     PageReaderTask(PageReader pageReader) {
       this.pageReader = pageReader;
     }

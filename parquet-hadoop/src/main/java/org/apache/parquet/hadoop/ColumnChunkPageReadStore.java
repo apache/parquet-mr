@@ -19,17 +19,12 @@
 package org.apache.parquet.hadoop;
 
 import java.io.IOException;
-import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PrimitiveIterator;
-import java.util.Queue;
 
 import java.util.concurrent.LinkedBlockingDeque;
-import org.apache.parquet.ParquetRuntimeException;
 import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.DataPage;
