@@ -98,10 +98,6 @@ class AsyncMultiBufferInputStream extends MultiBufferInputStream {
       long readCompleted = System.nanoTime();
       long timeSpent = readCompleted - startTime;
       LOG.debug("ASYNC Stream: READ - {}", timeSpent / 1000.0);
-      long putStart = System.nanoTime();
-      long putCompleted = System.nanoTime();
-      LOG.debug("ASYNC Stream: FS READ (output) BLOCKED - {}",
-        (putCompleted - putStart) / 1000.0);
       fetchIndex++;
     } catch (IOException e) {
       throw new RuntimeException(e);

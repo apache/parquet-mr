@@ -36,7 +36,7 @@ import java.util.List;
  *   throws {@link UnsupportedOperationException} in unimplemented methods to catch any unintended
  *   use in other cases.
  *   <p>
- *   Even thought this class is derived from ByteBufferInputStream it explicitly does not support any
+ *   Even though this class is derived from ByteBufferInputStream it explicitly does not support any
  *   byte buffer related methods like slice. It does, however support sliceBuffers which is a
  *   curious case of reading data from underlying streams
  *   <p>
@@ -176,7 +176,7 @@ public class SequenceByteBufferInputStream extends ByteBufferInputStream {
         if (iterator.hasNext()) {
           current = iterator.next();
         } else {
-          throw new EOFException("End of streams");
+          return -1;
         }
       }
     }
