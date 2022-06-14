@@ -87,6 +87,7 @@ import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Types;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -378,8 +379,12 @@ public class TestColumnIndexFiltering {
   @Test
   public void testSimpleFiltering() throws IOException {
     assertCorrectFiltering(
+      record -> record.getId() == 1234,
+      eq(longColumn("id"), 1234l));
+
+    assertCorrectFiltering(
         record -> record.getId() == 1234,
-        eq(longColumn("id"), 1234l));
+        eq(longColumn(new Type.ID(1)), 1234l));
 
     Set<Long> idSet = new HashSet<>();
     idSet.add(1234l);
@@ -395,10 +400,18 @@ public class TestColumnIndexFiltering {
         record.getId() == 111 || record.getId() == 6666 || record.getId() == 2 || record.getId() == 2468),
       in(longColumn("id"), idSet)
     );
+    assertCorrectFiltering(
+      record -> (record.getId() == 1234 || record.getId() == 5678 || record.getId() == 1357 ||
+        record.getId() == 111 || record.getId() == 6666 || record.getId() == 2 || record.getId() == 2468),
+      in(longColumn(new Type.ID(1)), idSet)
+    );
 
     assertCorrectFiltering(
+      record -> "miller".equals(record.getName()),
+      eq(binaryColumn("name"), Binary.fromString("miller")));
+    assertCorrectFiltering(
         record -> "miller".equals(record.getName()),
-        eq(binaryColumn("name"), Binary.fromString("miller")));
+        eq(binaryColumn(new Type.ID(2)), Binary.fromString("miller")));
 
     Set<Binary> nameSet = new HashSet<>();
     nameSet.add(Binary.fromString("anderson"));
@@ -411,10 +424,18 @@ public class TestColumnIndexFiltering {
         "thomas".equals(record.getName()) || "williams".equals(record.getName())),
       in(binaryColumn("name"), nameSet)
     );
+    assertCorrectFiltering(
+      record -> ("anderson".equals(record.getName()) || "miller".equals(record.getName()) ||
+        "thomas".equals(record.getName()) || "williams".equals(record.getName())),
+      in(binaryColumn(new Type.ID(2)), nameSet)
+    );
 
     assertCorrectFiltering(
+      record -> record.getName() == null,
+      eq(binaryColumn("name"), null));
+    assertCorrectFiltering(
         record -> record.getName() == null,
-        eq(binaryColumn("name"), null));
+        eq(binaryColumn(new Type.ID(2)), null));
 
     Set<Binary> nullSet = new HashSet<>();
     nullSet.add(null);
@@ -422,6 +443,9 @@ public class TestColumnIndexFiltering {
     assertCorrectFiltering(
       record -> record.getName() == null,
       in(binaryColumn("name"), nullSet));
+    assertCorrectFiltering(
+      record -> record.getName() == null,
+      in(binaryColumn(new Type.ID(2)), nullSet));
   }
 
   @Test
@@ -442,10 +466,18 @@ public class TestColumnIndexFiltering {
     assertEquals(DATA.stream().filter(user -> user.getName() == null).collect(Collectors.toList()),
         readUsers(eq(binaryColumn("name"), null), true, false));
 
+    // Column index filtering turned off
+    assertEquals(DATA.stream().filter(user -> user.getId() == 1234).collect(Collectors.toList()),
+      readUsers(eq(longColumn(new Type.ID(1)), 1234l), true, false));
+    assertEquals(DATA.stream().filter(user -> "miller".equals(user.getName())).collect(Collectors.toList()),
+      readUsers(eq(binaryColumn(new Type.ID(2)), Binary.fromString("miller")), true, false));
+    assertEquals(DATA.stream().filter(user -> user.getName() == null).collect(Collectors.toList()),
+      readUsers(eq(binaryColumn(new Type.ID(2)), null), true, false));
+
     // Every filtering mechanism turned off
-    assertEquals(DATA, readUsers(eq(longColumn("id"), 1234l), false, false));
-    assertEquals(DATA, readUsers(eq(binaryColumn("name"), Binary.fromString("miller")), false, false));
-    assertEquals(DATA, readUsers(eq(binaryColumn("name"), null), false, false));
+    assertEquals(DATA, readUsers(eq(longColumn(new Type.ID(1)), 1234l), false, false));
+    assertEquals(DATA, readUsers(eq(binaryColumn(new Type.ID(2)), Binary.fromString("miller")), false, false));
+    assertEquals(DATA, readUsers(eq(binaryColumn(new Type.ID(2)), null), false, false));
   }
 
   @Test
@@ -460,17 +492,40 @@ public class TestColumnIndexFiltering {
         and(and(gtEq(doubleColumn("location.lat"), 37.0), ltEq(doubleColumn("location.lat"), 70.0)),
             and(gtEq(doubleColumn("location.lon"), -21.0), ltEq(doubleColumn("location.lon"), 35.0))));
     assertCorrectFiltering(
+      record -> {
+        Location loc = record.getLocation();
+        Double lat = loc == null ? null : loc.getLat();
+        Double lon = loc == null ? null : loc.getLon();
+        return lat != null && lon != null && 37 <= lat && lat <= 70 && -21 <= lon && lon <= 35;
+      },
+      and(and(gtEq(doubleColumn(new Type.ID(4)), 37.0), ltEq(doubleColumn(new Type.ID(4)), 70.0)),
+        and(gtEq(doubleColumn(new Type.ID(3)), -21.0), ltEq(doubleColumn(new Type.ID(3)), 35.0))));
+
+    assertCorrectFiltering(
         record -> {
           Location loc = record.getLocation();
           return loc == null || (loc.getLat() == null && loc.getLon() == null);
         },
         and(eq(doubleColumn("location.lat"), null), eq(doubleColumn("location.lon"), null)));
     assertCorrectFiltering(
-        record -> {
-          String name = record.getName();
-          return name != null && name.compareTo("thomas") < 0 && record.getId() <= 3 * DATA.size() / 4;
-        },
-        and(lt(binaryColumn("name"), Binary.fromString("thomas")), ltEq(longColumn("id"), 3l * DATA.size() / 4)));
+      record -> {
+        Location loc = record.getLocation();
+        return loc == null || (loc.getLat() == null && loc.getLon() == null);
+      },
+      and(eq(doubleColumn(new Type.ID(4)), null), eq(doubleColumn(new Type.ID(3)), null)));
+
+    assertCorrectFiltering(
+      record -> {
+        String name = record.getName();
+        return name != null && name.compareTo("thomas") < 0 && record.getId() <= 3 * DATA.size() / 4;
+      },
+      and(lt(binaryColumn("name"), Binary.fromString("thomas")), ltEq(longColumn("id"), 3l * DATA.size() / 4)));
+    assertCorrectFiltering(
+      record -> {
+        String name = record.getName();
+        return name != null && name.compareTo("thomas") < 0 && record.getId() <= 3 * DATA.size() / 4;
+      },
+      and(lt(binaryColumn(new Type.ID(2)), Binary.fromString("thomas")), ltEq(longColumn(new Type.ID(1)), 3l * DATA.size() / 4)));
   }
 
   public static class NameStartsWithVowel extends UserDefinedPredicate<Binary> {
@@ -571,6 +626,15 @@ public class TestColumnIndexFiltering {
         record -> !(NameStartsWithVowel.isStartingWithVowel(record.getName()) || record.getId() % 234 == 0),
             not(or(userDefined(binaryColumn("name"), NameStartsWithVowel.class),
                 userDefined(longColumn("id"), new IsDivisibleBy(234)))));
+
+    assertCorrectFiltering(
+      record -> NameStartsWithVowel.isStartingWithVowel(record.getName()) || record.getId() % 234 == 0,
+      or(userDefined(binaryColumn(new Type.ID(2)), NameStartsWithVowel.class),
+        userDefined(longColumn(new Type.ID(1)), new IsDivisibleBy(234))));
+    assertCorrectFiltering(
+      record -> !(NameStartsWithVowel.isStartingWithVowel(record.getName()) || record.getId() % 234 == 0),
+      not(or(userDefined(binaryColumn(new Type.ID(2)), NameStartsWithVowel.class),
+        userDefined(longColumn(new Type.ID(1)), new IsDivisibleBy(234)))));
   }
 
   @Test
@@ -596,6 +660,28 @@ public class TestColumnIndexFiltering {
         record -> record.getId() == 1234,
         or(eq(longColumn("id"), 1234l),
             userDefined(longColumn("not-existing-long"), new IsDivisibleBy(1))));
+
+    // Missing column filter is always true
+    assertEquals(DATA, readUsers(notEq(binaryColumn(new Type.ID(10)), Binary.EMPTY), true));
+    assertCorrectFiltering(
+      record -> record.getId() == 1234,
+      and(eq(longColumn(new Type.ID(1)), 1234l),
+        eq(longColumn(new Type.ID(10)), null)));
+    assertCorrectFiltering(
+      record -> "miller".equals(record.getName()),
+      and(eq(binaryColumn(new Type.ID(2)), Binary.fromString("miller")),
+        invert(userDefined(binaryColumn(new Type.ID(10)), NameStartsWithVowel.class))));
+
+    // Missing column filter is always false
+    assertEquals(emptyList(), readUsers(lt(longColumn(new Type.ID(10)), 0l), true));
+    assertCorrectFiltering(
+      record -> "miller".equals(record.getName()),
+      or(eq(binaryColumn(new Type.ID(2)), Binary.fromString("miller")),
+        gtEq(binaryColumn(new Type.ID(10)), Binary.EMPTY)));
+    assertCorrectFiltering(
+      record -> record.getId() == 1234,
+      or(eq(longColumn(new Type.ID(1)), 1234l),
+        userDefined(longColumn(new Type.ID(10)), new IsDivisibleBy(1))));
   }
 
   @Test
@@ -613,5 +699,19 @@ public class TestColumnIndexFiltering {
         emptyList(),
         readUsersWithProjection(FilterCompat.get(userDefined(binaryColumn("name"), NameStartsWithVowel.class)),
             SCHEMA_WITHOUT_NAME, false, true));
+
+    // All rows shall be retrieved because all values in column 'name' shall be handled as null values
+    assertEquals(
+      DATA.stream().map(user -> user.cloneWithName(null)).collect(toList()),
+      readUsersWithProjection(FilterCompat.get(eq(binaryColumn(new Type.ID(2)), null)), SCHEMA_WITHOUT_NAME, true, true));
+
+    // Column index filter shall drop all pages because all values in column 'name' shall be handled as null values
+    assertEquals(
+      emptyList(),
+      readUsersWithProjection(FilterCompat.get(notEq(binaryColumn(new Type.ID(2)), null)), SCHEMA_WITHOUT_NAME, false, true));
+    assertEquals(
+      emptyList(),
+      readUsersWithProjection(FilterCompat.get(userDefined(binaryColumn(new Type.ID(2)), NameStartsWithVowel.class)),
+        SCHEMA_WITHOUT_NAME, false, true));
   }
 }

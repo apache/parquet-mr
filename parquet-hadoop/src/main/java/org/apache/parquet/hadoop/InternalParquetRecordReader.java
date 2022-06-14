@@ -176,17 +176,18 @@ class InternalParquetRecordReader<T> {
     }
 
     // initialize a ReadContext for this file
+    boolean useColumnId = conf.getBoolean(ParquetInputFormat.COLUMN_ID_RESOLUTION, false);
     this.reader = reader;
     FileMetaData parquetFileMetadata = reader.getFooter().getFileMetaData();
     this.fileSchema = parquetFileMetadata.getSchema();
     Map<String, String> fileMetadata = parquetFileMetadata.getKeyValueMetaData();
     ReadSupport.ReadContext readContext = readSupport.init(new InitContext(conf, toSetMultiMap(fileMetadata), fileSchema));
     this.columnIOFactory = new ColumnIOFactory(parquetFileMetadata.getCreatedBy());
-    this.requestedSchema = readContext.getRequestedSchema();
-    this.columnCount = requestedSchema.getPaths().size();
+    MessageType requestedSchemaByColName = readContext.getRequestedSchema();
+    this.columnCount = requestedSchemaByColName.getPaths().size();
     // Setting the projection schema before running any filtering (e.g. getting filtered record count)
     // because projection impacts filtering
-    reader.setRequestedSchema(requestedSchema);
+    this.requestedSchema = reader.setRequestedSchema(requestedSchemaByColName, useColumnId);
     this.recordConverter = readSupport.prepareForRead(conf, fileMetadata, fileSchema, readContext);
     this.strictTypeChecking = options.isEnabled(STRICT_TYPE_CHECKING, true);
     this.total = reader.getFilteredRecordCount();
@@ -198,6 +199,7 @@ class InternalParquetRecordReader<T> {
   public void initialize(ParquetFileReader reader, Configuration configuration)
       throws IOException {
     // initialize a ReadContext for this file
+    boolean useColumnId = configuration.getBoolean(ParquetInputFormat.COLUMN_ID_RESOLUTION, false);
     this.reader = reader;
     FileMetaData parquetFileMetadata = reader.getFooter().getFileMetaData();
     this.fileSchema = parquetFileMetadata.getSchema();
@@ -205,11 +207,11 @@ class InternalParquetRecordReader<T> {
     ReadSupport.ReadContext readContext = readSupport.init(new InitContext(
         configuration, toSetMultiMap(fileMetadata), fileSchema));
     this.columnIOFactory = new ColumnIOFactory(parquetFileMetadata.getCreatedBy());
-    this.requestedSchema = readContext.getRequestedSchema();
-    this.columnCount = requestedSchema.getPaths().size();
+    MessageType requestedSchemaByColName = readContext.getRequestedSchema();
+    this.columnCount = requestedSchemaByColName.getPaths().size();
     // Setting the projection schema before running any filtering (e.g. getting filtered record count)
     // because projection impacts filtering
-    reader.setRequestedSchema(requestedSchema);
+    this.requestedSchema = reader.setRequestedSchema(requestedSchemaByColName, useColumnId);
     this.recordConverter = readSupport.prepareForRead(
         configuration, fileMetadata, fileSchema, readContext);
     this.strictTypeChecking = configuration.getBoolean(STRICT_TYPE_CHECKING, true);

@@ -18,7 +18,10 @@
  */
 package org.apache.parquet.filter2.predicate;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -41,6 +44,7 @@ import org.apache.parquet.filter2.predicate.Operators.SetColumnFilterPredicate;
 import org.apache.parquet.filter2.predicate.Operators.UserDefined;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.Type;
 
 /**
  * Inspects the column types found in the provided {@link FilterPredicate} and compares them
@@ -170,6 +174,24 @@ public class SchemaCompatibilityValidator implements FilterPredicate.Visitor<Voi
 
   private <T extends Comparable<T>> void validateColumn(Column<T> column) {
     ColumnPath path = column.getColumnPath();
+    if (path == null) {
+      HashSet<Type.ID> ids = new HashSet<>();
+      Type.ID id = column.getColumnId();
+      List<ColumnDescriptor> columnDescriptors = new ArrayList<>(columnsAccordingToSchema.values());
+      for (ColumnDescriptor columnDescriptor : columnDescriptors) {
+        Type.ID columnId = columnDescriptor.getId();
+        if (columnId != null) {
+          if (ids.contains(columnId)) {
+            throw new RuntimeException("duplicate id");
+          }
+          ids.add(columnId);
+          if (columnId.intValue() == id.intValue()) {
+            column.setColumnPath(ColumnPath.get(columnDescriptor.getPath()));
+            path = column.getColumnPath();
+          }
+        }
+      }
+    }
 
     Class<?> alreadySeen = columnTypesEncountered.get(path);
     if (alreadySeen != null && !alreadySeen.equals(column.getColumnType())) {

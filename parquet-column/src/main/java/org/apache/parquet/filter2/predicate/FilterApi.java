@@ -45,6 +45,7 @@ import org.apache.parquet.filter2.predicate.Operators.SupportsLtGt;
 import org.apache.parquet.filter2.predicate.Operators.UserDefined;
 import org.apache.parquet.filter2.predicate.Operators.UserDefinedByClass;
 import org.apache.parquet.filter2.predicate.Operators.UserDefinedByInstance;
+import org.apache.parquet.schema.Type;
 
 /**
  * The Filter API is expressed through these static methods.
@@ -72,24 +73,48 @@ public final class FilterApi {
     return new IntColumn(ColumnPath.fromDotString(columnPath));
   }
 
+  public static IntColumn intColumn(Type.ID id) {
+    return new IntColumn(id);
+  }
+
   public static LongColumn longColumn(String columnPath) {
     return new LongColumn(ColumnPath.fromDotString(columnPath));
+  }
+
+  public static LongColumn longColumn(Type.ID id) {
+    return new LongColumn(id);
   }
 
   public static FloatColumn floatColumn(String columnPath) {
     return new FloatColumn(ColumnPath.fromDotString(columnPath));
   }
 
+  public static FloatColumn floatColumn(Type.ID id) {
+    return new FloatColumn(id);
+  }
+
   public static DoubleColumn doubleColumn(String columnPath) {
     return new DoubleColumn(ColumnPath.fromDotString(columnPath));
+  }
+
+  public static DoubleColumn doubleColumn(Type.ID id) {
+    return new DoubleColumn(id);
   }
 
   public static BooleanColumn booleanColumn(String columnPath) {
     return new BooleanColumn(ColumnPath.fromDotString(columnPath));
   }
 
+  public static BooleanColumn booleanColumn(Type.ID id) {
+    return new BooleanColumn(id);
+  }
+
   public static BinaryColumn binaryColumn(String columnPath) {
     return new BinaryColumn(ColumnPath.fromDotString(columnPath));
+  }
+
+  public static BinaryColumn binaryColumn(Type.ID id) {
+    return new BinaryColumn(id);
   }
 
   /**

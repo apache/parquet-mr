@@ -151,6 +151,8 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
    */
   public static final String TASK_SIDE_METADATA = "parquet.task.side.metadata";
 
+  public static final String COLUMN_ID_RESOLUTION = "parquet.column.id.resolution";
+
   /**
    * key to turn off file splitting. See PARQUET-246.
    */

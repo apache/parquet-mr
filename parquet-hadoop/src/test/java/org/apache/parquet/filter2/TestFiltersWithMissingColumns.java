@@ -30,6 +30,7 @@ import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.ExampleParquetWriter;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Types;
 import org.junit.Before;
 import org.junit.Rule;
@@ -71,8 +72,8 @@ public class TestFiltersWithMissingColumns {
     this.path = new Path(file.toString());
 
     MessageType type = Types.buildMessage()
-        .required(INT64).named("id")
-        .required(BINARY).as(UTF8).named("data")
+        .addField(Types.required(INT64).id(1).named("id"))
+        .addField(Types.required(BINARY).as(UTF8).named("data"))
         .named("test");
 
     SimpleGroupFactory factory = new SimpleGroupFactory(type);
@@ -97,6 +98,7 @@ public class TestFiltersWithMissingColumns {
   @Test
   public void testNormalFilter() throws Exception {
     assertEquals(500, countFilteredRecords(path, lt(longColumn("id"), 500L)));
+    assertEquals(500, countFilteredRecords(path, lt(longColumn(new Type.ID(1)), 500L)));
   }
 
   @Test
@@ -108,6 +110,8 @@ public class TestFiltersWithMissingColumns {
     values.add(5L);
     assertEquals(0, countFilteredRecords(path, in(longColumn("missing"), values)));
     assertEquals(1000, countFilteredRecords(path, notIn(longColumn("missing"), values)));
+    assertEquals(0, countFilteredRecords(path, in(longColumn(new Type.ID(11)), values)));
+    assertEquals(1000, countFilteredRecords(path, notIn(longColumn(new Type.ID(11)), values)));
   }
 
   @Test
@@ -184,6 +188,79 @@ public class TestFiltersWithMissingColumns {
   }
 
   @Test
+  public void testAndMissingColumnFilterForID() throws Exception {
+    // missing column filter is true
+    assertEquals(500, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      eq(binaryColumn(new Type.ID(11)), null)
+    )));
+    assertEquals(500, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      notEq(binaryColumn(new Type.ID(11)), fromString("any"))
+    )));
+
+    assertEquals(500, countFilteredRecords(path, and(
+      eq(binaryColumn(new Type.ID(11)), null),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(500, countFilteredRecords(path, and(
+      notEq(binaryColumn(new Type.ID(11)), fromString("any")),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+
+    // missing column filter is false
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      eq(binaryColumn(new Type.ID(11)), fromString("any"))
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      notEq(binaryColumn(new Type.ID(11)), null)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      lt(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      ltEq(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      gt(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(longColumn(new Type.ID(1)), 500L),
+      gtEq(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+
+    assertEquals(0, countFilteredRecords(path, and(
+      eq(binaryColumn(new Type.ID(11)), fromString("any")),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      notEq(binaryColumn(new Type.ID(11)), null),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      lt(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      ltEq(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      gt(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(0, countFilteredRecords(path, and(
+      gtEq(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+  }
+
+  @Test
   public void testOrMissingColumnFilter() throws Exception {
     // missing column filter is false
     assertEquals(500, countFilteredRecords(path, or(
@@ -253,6 +330,79 @@ public class TestFiltersWithMissingColumns {
     assertEquals(1000, countFilteredRecords(path, or(
         notEq(binaryColumn("missing"), fromString("any")),
         lt(longColumn("id"), 500L)
+    )));
+  }
+
+  @Test
+  public void testOrMissingColumnFilterForID() throws Exception {
+    // missing column filter is false
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      eq(binaryColumn(new Type.ID(11)), fromString("any"))
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      notEq(binaryColumn(new Type.ID(11)), null)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      lt(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      ltEq(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      gt(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      gtEq(doubleColumn(new Type.ID(11)), 33.33)
+    )));
+
+    assertEquals(500, countFilteredRecords(path, or(
+      eq(binaryColumn(new Type.ID(11)), fromString("any")),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      notEq(binaryColumn(new Type.ID(11)), null),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      lt(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      ltEq(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      gt(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(500, countFilteredRecords(path, or(
+      gtEq(doubleColumn(new Type.ID(11)), 33.33),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+
+    // missing column filter is false
+    assertEquals(1000, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      eq(binaryColumn(new Type.ID(11)), null)
+    )));
+    assertEquals(1000, countFilteredRecords(path, or(
+      lt(longColumn(new Type.ID(1)), 500L),
+      notEq(binaryColumn(new Type.ID(11)), fromString("any"))
+    )));
+
+    assertEquals(1000, countFilteredRecords(path, or(
+      eq(binaryColumn(new Type.ID(11)), null),
+      lt(longColumn(new Type.ID(1)), 500L)
+    )));
+    assertEquals(1000, countFilteredRecords(path, or(
+      notEq(binaryColumn(new Type.ID(11)), fromString("any")),
+      lt(longColumn(new Type.ID(1)), 500L)
     )));
   }
 

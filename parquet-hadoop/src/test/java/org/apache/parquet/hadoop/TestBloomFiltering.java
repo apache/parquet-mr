@@ -33,6 +33,7 @@ import org.apache.parquet.hadoop.example.ExampleParquetWriter;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.io.api.Binary;
+import org.apache.parquet.schema.Type;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -340,6 +341,41 @@ public class TestBloomFiltering {
   }
 
   @Test
+  public void testSimpleFilteringForID() throws IOException {
+    assertCorrectFiltering(
+      record -> record.getId() == 1234L,
+      eq(longColumn(new Type.ID(1)), 1234L));
+
+    assertCorrectFiltering(
+      record -> "miller".equals(record.getName()),
+      eq(binaryColumn(new Type.ID(2)), Binary.fromString("miller")));
+
+    Set<Binary> values1 = new HashSet<>();
+    values1.add(Binary.fromString("miller"));
+    values1.add(Binary.fromString("anderson"));
+
+    assertCorrectFiltering(
+      record -> "miller".equals(record.getName()) || "anderson".equals(record.getName()),
+      in(binaryColumn(new Type.ID(2)), values1));
+
+    Set<Binary> values2 = new HashSet<>();
+    values2.add(Binary.fromString("miller"));
+    values2.add(Binary.fromString("alien"));
+
+    assertCorrectFiltering(
+      record -> "miller".equals(record.getName()),
+      in(binaryColumn(new Type.ID(2)), values2));
+
+    Set<Binary> values3 = new HashSet<>();
+    values3.add(Binary.fromString("alien"));
+    values3.add(Binary.fromString("predator"));
+
+    assertCorrectFiltering(
+      record -> "dummy".equals(record.getName()),
+      in(binaryColumn(new Type.ID(2)), values3));
+  }
+
+  @Test
   public void testNestedFiltering() throws IOException {
     assertCorrectFiltering(
       record -> {
@@ -347,5 +383,15 @@ public class TestBloomFiltering {
         return location != null && location.getLat() != null && location.getLat() == 99.9;
       },
       eq(doubleColumn("location.lat"), 99.9));
+  }
+
+  @Test
+  public void testNestedFilteringForID() throws IOException {
+    assertCorrectFiltering(
+      record -> {
+        PhoneBookWriter.Location location = record.getLocation();
+        return location != null && location.getLat() != null && location.getLat() == 99.9;
+      },
+      eq(doubleColumn(new Type.ID(4)), 99.9));
   }
 }

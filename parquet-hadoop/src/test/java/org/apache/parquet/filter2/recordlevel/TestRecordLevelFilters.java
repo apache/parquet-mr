@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.HashSet;
 
+import org.apache.parquet.schema.Type;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -140,7 +141,12 @@ public class TestRecordLevelFilters {
   @Test
   public void testAllFilter() throws Exception {
     BinaryColumn name = binaryColumn("name");
+    BinaryColumn nameAsID = binaryColumn(new Type.ID(2));
+    testAllFilterHelper(name);
+    testAllFilterHelper(nameAsID);
+  }
 
+  public void testAllFilterHelper(BinaryColumn name) throws Exception {
     FilterPredicate pred = eq(name, Binary.fromString("no matches"));
 
     List<Group> found = PhoneBookWriter.readFile(phonebookFile, FilterCompat.get(pred));
@@ -150,7 +156,12 @@ public class TestRecordLevelFilters {
   @Test
   public void testInFilter() throws Exception {
     BinaryColumn name = binaryColumn("name");
+    BinaryColumn nameAsID = binaryColumn(new Type.ID(2));
+    testInFilterHelper(name);
+    testInFilterHelper(nameAsID);
+  }
 
+  public void testInFilterHelper(BinaryColumn name) throws Exception {
     HashSet<Binary> nameSet = new HashSet<>();
     nameSet.add(Binary.fromString("thing2"));
     nameSet.add(Binary.fromString("thing1"));
@@ -183,7 +194,12 @@ public class TestRecordLevelFilters {
   @Test
   public void testNameNotNull() throws Exception {
     BinaryColumn name = binaryColumn("name");
+    BinaryColumn nameAsID = binaryColumn(new Type.ID(2));
+    testNameNotNullHelper(name);
+    testNameNotNullHelper(nameAsID);
+  }
 
+  public void testNameNotNullHelper(BinaryColumn name) throws Exception {
     FilterPredicate pred = notEq(name, null);
 
     List<Group> found = PhoneBookWriter.readFile(phonebookFile, FilterCompat.get(pred));
@@ -248,7 +264,12 @@ public class TestRecordLevelFilters {
   @Test
   public void testNameNotStartWithP() throws Exception {
     BinaryColumn name = binaryColumn("name");
+    BinaryColumn nameAsID = binaryColumn(new Type.ID(2));
+    testNameNotStartWithPHelper(name);
+    testNameNotStartWithPHelper(nameAsID);
+  }
 
+  public void testNameNotStartWithPHelper(BinaryColumn name) throws Exception {
     FilterPredicate pred = not(userDefined(name, StartWithP.class));
 
     List<Group> found = PhoneBookWriter.readFile(phonebookFile, FilterCompat.get(pred));
@@ -287,7 +308,14 @@ public class TestRecordLevelFilters {
     BinaryColumn name = binaryColumn("name");
     DoubleColumn lon = doubleColumn("location.lon");
     DoubleColumn lat = doubleColumn("location.lat");
+    testComplexHelper(name, lon, lat);
+    BinaryColumn nameAsID = binaryColumn(new Type.ID(2));
+    DoubleColumn lonAsID = doubleColumn(new Type.ID(3));
+    DoubleColumn latAsID = doubleColumn(new Type.ID(4));
+    testComplexHelper(nameAsID, lonAsID, latAsID);
+  }
 
+  public void testComplexHelper(BinaryColumn name, DoubleColumn lon, DoubleColumn lat) throws Exception {
     FilterPredicate pred = or(and(gt(lon, 150.0), notEq(lat, null)), eq(name, Binary.fromString("alice")));
 
     List<Group> found = PhoneBookWriter.readFile(phonebookFile, FilterCompat.get(pred));

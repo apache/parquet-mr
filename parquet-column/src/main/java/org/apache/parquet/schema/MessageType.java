@@ -19,9 +19,12 @@
 package org.apache.parquet.schema;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.hadoop.metadata.ColumnPath;
 import org.apache.parquet.io.InvalidRecordException;
 
 /**
@@ -94,7 +97,7 @@ public final class MessageType extends GroupType {
     int maxRep = getMaxRepetitionLevel(path);
     int maxDef = getMaxDefinitionLevel(path);
     PrimitiveType type = getType(path).asPrimitiveType();
-    return new ColumnDescriptor(path, type, maxRep, maxDef);
+    return new ColumnDescriptor(path, getType(path).asPrimitiveType().getId(), type, maxRep, maxDef);
   }
 
   public List<String[]> getPaths() {
@@ -109,6 +112,7 @@ public final class MessageType extends GroupType {
       PrimitiveType primitiveType = getType(path).asPrimitiveType();
       columns.add(new ColumnDescriptor(
                       path,
+                      primitiveType.getId(),
                       primitiveType,
                       getMaxRepetitionLevel(path),
                       getMaxDefinitionLevel(path)));

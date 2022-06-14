@@ -23,6 +23,8 @@ import static org.apache.parquet.hadoop.ParquetWriter.DEFAULT_BLOCK_SIZE;
 import static org.apache.parquet.hadoop.util.ContextUtil.getConfiguration;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 
 import org.apache.hadoop.conf.Configuration;
@@ -46,6 +48,10 @@ import org.apache.parquet.hadoop.codec.CodecConfig;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.hadoop.util.ConfigurationUtil;
 import org.apache.parquet.hadoop.util.HadoopOutputFile;
+import org.apache.parquet.schema.GroupType;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,6 +159,7 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   public static final String BLOOM_FILTER_MAX_BYTES = "parquet.bloom.filter.max.bytes";
   public static final String PAGE_ROW_COUNT_LIMIT = "parquet.page.row.count.limit";
   public static final String PAGE_WRITE_CHECKSUM_ENABLED = "parquet.page.write-checksum.enabled";
+  public static final String COLUMN_ID_RESOLUTION        = "parquet.column.id.resolution";
 
   public static JobSummaryLevel getJobSummaryLevel(Configuration conf) {
     String level = conf.get(JOB_SUMMARY_LEVEL);
@@ -285,6 +292,14 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
 
   public static int getPageSize(Configuration configuration) {
     return configuration.getInt(PAGE_SIZE, ParquetProperties.DEFAULT_PAGE_SIZE);
+  }
+
+  public static boolean getColumnIdResolution(Configuration configuration) {
+    return configuration.getBoolean(COLUMN_ID_RESOLUTION, ParquetProperties.DEFAULT_COLUMN_ID_RESOLUTION);
+  }
+
+  public static void setColumnIdResolution(Configuration conf, boolean columnIdResolution) {
+    conf.setBoolean(COLUMN_ID_RESOLUTION, columnIdResolution);
   }
 
   public static int getDictionaryPageSize(Configuration configuration) {
@@ -452,7 +467,8 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
         .withMaxBloomFilterBytes(getBloomFilterMaxBytes(conf))
         .withBloomFilterEnabled(getBloomFilterEnabled(conf))
         .withPageRowCountLimit(getPageRowCountLimit(conf))
-        .withPageWriteChecksumEnabled(getPageWriteChecksumEnabled(conf));
+        .withPageWriteChecksumEnabled(getPageWriteChecksumEnabled(conf))
+        .withColumnIdResolution(getColumnIdResolution(conf));
     new ColumnConfigParser()
         .withColumnConfig(ENABLE_DICTIONARY, key -> conf.getBoolean(key, false), propsBuilder::withDictionaryEncoding)
         .withColumnConfig(BLOOM_FILTER_ENABLED, key -> conf.getBoolean(key, false),
@@ -472,7 +488,13 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
     LOG.debug("Parquet properties are:\n{}", props);
 
     WriteContext fileWriteContext = writeSupport.init(conf);
-    
+
+    MessageType schema = fileWriteContext.getSchema();
+    if (props.getColumnIdResolution()) {
+      HashSet<Type.ID> ids = new HashSet<>();
+      checkDuplicateId(schema, ids);
+    }
+
     FileEncryptionProperties encryptionProperties = createEncryptionProperties(conf, file, fileWriteContext);
     
     ParquetFileWriter w = new ParquetFileWriter(HadoopOutputFile.fromPath(file, conf),
@@ -505,6 +527,32 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
         props,
         memoryManager,
         conf);
+  }
+
+  private void checkDuplicateId(GroupType schema, HashSet<Type.ID> ids) {
+    List<Type> fields = schema.getFields();
+    for (Type field : fields) {
+      if (field instanceof PrimitiveType) {
+        Type.ID id = field.getId();
+        if (id != null) {
+          if (ids.contains(id)) {
+            throw new RuntimeException("can't use column id resolution because there are duplicate column ids.");
+          }
+          ids.add(id);
+        }
+      }
+
+      if (field instanceof GroupType) {
+        Type.ID id = field.getId();
+        if (id != null) {
+          if (ids.contains(id)) {
+            throw new RuntimeException("can't use column id resolution because there are duplicate column ids.");
+          }
+          ids.add(id);
+        }
+        checkDuplicateId(field.asGroupType(), ids);
+      }
+    }
   }
 
   /**

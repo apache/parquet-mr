@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.HashSet;
 
+import org.apache.parquet.schema.Type;
 import org.junit.Test;
 
 import org.apache.parquet.column.statistics.IntStatistics;
@@ -64,7 +65,6 @@ public class TestRowGroupFilter {
     BlockMetaData b3 = makeBlockFromStats(stats3, 303);
     blocks.add(b3);
 
-
     IntStatistics stats4 = new IntStatistics();
     stats4.setMinMax(0, 0);
     stats4.setNumNulls(304);
@@ -84,9 +84,16 @@ public class TestRowGroupFilter {
     BlockMetaData b6 = makeBlockFromStats(stats6, 306);
     blocks.add(b6);
 
-    MessageType schema = MessageTypeParser.parseMessageType("message Document { optional int32 foo; }");
+    MessageType schema = MessageTypeParser.parseMessageType("message Document { optional int32 foo = 15; }");
     IntColumn foo = intColumn("foo");
+    testApplyRowGroupFiltersHelper(foo, blocks, schema, b1, b2, b3, b4, b5, b6);
+    IntColumn fooUsingID = intColumn(new Type.ID(15));
+    testApplyRowGroupFiltersHelper(fooUsingID, blocks, schema, b1, b2, b3, b4, b5, b6);
+  }
 
+  private void testApplyRowGroupFiltersHelper(IntColumn foo, List<BlockMetaData> blocks, MessageType schema,
+                                                 BlockMetaData b1, BlockMetaData b2, BlockMetaData b3,
+                                                 BlockMetaData b4, BlockMetaData b5, BlockMetaData b6) {
     Set<Integer> set1 = new HashSet<>();
     set1.add(9);
     set1.add(10);
