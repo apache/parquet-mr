@@ -115,14 +115,18 @@ class AsyncMultiBufferInputStream extends MultiBufferInputStream {
     if (readIndex < buffers.size()) {
       long start = System.nanoTime();
       try {
-        LOG.debug("ASYNC (next): Getting next buffer");
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("ASYNC (next): Getting next buffer");
+        }
         Future<Void> future = readFutures.take();
         future.get();
         long timeSpent = System.nanoTime() - start;
         totalCountBlocked.add(1);
         totalTimeBlocked.add(timeSpent);
         maxTimeBlocked.accumulate(timeSpent);
-        LOG.debug("ASYNC (next): {}: Time blocked for read {} ns", this, timeSpent);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("ASYNC (next): {}: Time blocked for read {} ns", this, timeSpent);
+        }
       } catch (Exception e) {
         if (e instanceof InterruptedException) {
           Thread.currentThread().interrupt();

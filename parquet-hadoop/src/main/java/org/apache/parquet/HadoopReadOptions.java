@@ -65,10 +65,10 @@ public class HadoopReadOptions extends ParquetReadOptions {
                             Configuration conf,
                             FileDecryptionProperties fileDecryptionProperties) {
     super(
-      useSignedStringMinMax, useStatsFilter, useDictionaryFilter, useRecordFilter,
-      useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, enableAsyncIOReader,
-      enableParallelColumnReader, recordFilter, metadataFilter, codecFactory, allocator,
-      maxAllocationSize, properties, fileDecryptionProperties
+        useSignedStringMinMax, useStatsFilter, useDictionaryFilter, useRecordFilter,
+        useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, enableAsyncIOReader,
+        enableParallelColumnReader, recordFilter, metadataFilter, codecFactory, allocator,
+        maxAllocationSize, properties, fileDecryptionProperties
     );
     this.conf = conf;
   }

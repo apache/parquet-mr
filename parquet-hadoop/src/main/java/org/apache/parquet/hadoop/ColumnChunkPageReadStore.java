@@ -77,13 +77,13 @@ public class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageRe
     private final byte[] dataPageAAD;
     private final byte[] dictionaryPageAAD;
 
-    private final ParquetFileReader.PageReader pageReader;
+    private final FilePageReader filePageReader;
 
     ColumnChunkPageReader(BytesInputDecompressor decompressor,
         LinkedBlockingDeque<Optional<DataPage>> compressedPages,
         DictionaryPage compressedDictionaryPage, OffsetIndex offsetIndex, long valueCount,
         long rowCount, BlockCipher.Decryptor blockDecryptor, byte[] fileAAD, int rowGroupOrdinal,
-        int columnOrdinal, ParquetFileReader.PageReader pageReader) {
+        int columnOrdinal, FilePageReader filePageReader) {
       this.decompressor = decompressor;
       this.compressedPages = compressedPages;
       this.compressedDictionaryPage = compressedDictionaryPage;
@@ -93,7 +93,7 @@ public class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageRe
 
       this.blockDecryptor = blockDecryptor;
 
-      this.pageReader = pageReader;
+      this.filePageReader = filePageReader;
 
       if (null != blockDecryptor) {
         dataPageAAD = AesCipher.createModuleAAD(fileAAD, ModuleType.DataPage, rowGroupOrdinal, columnOrdinal, 0);
@@ -106,7 +106,7 @@ public class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageRe
 
     @Override
     public void close() throws IOException {
-      this.pageReader.close();
+      this.filePageReader.close();
     }
 
     private int getPageOrdinal(int currentPageIndex) {
