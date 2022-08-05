@@ -43,6 +43,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -137,15 +139,30 @@ public class TestColumnChunkPageWriteStore {
 
   @Test
   public void testAsync() throws Exception {
-    conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
-    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(false));
-    testInternal();
-    conf.set("parquet.read.async.io.enabled", Boolean.toString(false));
-    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
-    testInternal();
-    conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
-    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
-    testInternal();
+    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(4);
+    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(4);
+    // if we change the default for the ParquetFileReader to async, the threadpool may be initialized
+    // by some other thread. In that case we want to make sure we restore the thread pool.
+    ExecutorService prevIOThreadPool = ParquetFileReader.ioThreadPool;
+    ExecutorService prevProcThreadPool = ParquetFileReader.processThreadPool;
+    ParquetFileReader.setAsyncIOThreadPool(parquetIOThreadPool, false);
+    ParquetFileReader.setAsyncProcessThreadPool(parquetProcessThreadPool, false );
+    try {
+      conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
+      conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(false));
+      testInternal();
+      conf.set("parquet.read.async.io.enabled", Boolean.toString(false));
+      conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
+      testInternal();
+      conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
+      conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
+      testInternal();
+    } finally {
+      parquetProcessThreadPool.shutdown();
+      parquetIOThreadPool.shutdown();
+      ParquetFileReader.setAsyncIOThreadPool(prevIOThreadPool, false);
+      ParquetFileReader.setAsyncProcessThreadPool(prevProcThreadPool, false);
+    }
   }
 
 

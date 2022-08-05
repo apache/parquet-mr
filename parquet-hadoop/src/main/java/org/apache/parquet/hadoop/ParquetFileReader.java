@@ -698,6 +698,7 @@ public class ParquetFileReader implements Closeable {
   protected final SeekableInputStream f;
   // input streams opened in the async mode
   protected final List<SeekableInputStream> inputStreams = new ArrayList<>();
+  protected final List<ByteBufferInputStream> bufferInputStreams = new ArrayList<>();
   private final InputFile file;
   final ParquetReadOptions options;
   private final Map<ColumnPath, ColumnDescriptor> paths = new HashMap<>();
@@ -1489,6 +1490,12 @@ public class ParquetFileReader implements Closeable {
         } catch (IOException e) {
         }
       }
+      for (ByteBufferInputStream bufStr : bufferInputStreams) {
+        try {
+          bufStr.close();
+        } catch (IOException e) {
+        }
+      }
     } finally {
       options.getCodecFactory().release();
     }
@@ -1891,6 +1898,7 @@ public class ParquetFileReader implements Closeable {
         // asynchronously.
         stream = ByteBufferInputStream.wrapAsync(ioThreadPool, is, buffers);
       }
+      bufferInputStreams.add(stream);
       // report in a counter the data we just scanned
       BenchmarkCounter.incrementBytesRead(length);
       for (final ChunkDescriptor descriptor : chunks) {

@@ -354,8 +354,12 @@ public class TestPropertiesDrivenEncryption {
     ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
     ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
     ExecutorService threadPool = Executors.newFixedThreadPool(NUM_THREADS);
-    ParquetFileReader.setAsyncIOThreadPool(parquetIOThreadPool, true);
-    ParquetFileReader.setAsyncProcessThreadPool(parquetProcessThreadPool, true );
+    // if we change the default for the ParquetFileReader to async, the threadpool may be initialized
+    // by some other thread. In that case we want to make sure we restore the thread pool.
+    ExecutorService prevIOThreadPool = ParquetFileReader.ioThreadPool;
+    ExecutorService prevProcThreadPool = ParquetFileReader.processThreadPool;
+    ParquetFileReader.setAsyncIOThreadPool(parquetIOThreadPool, false);
+    ParquetFileReader.setAsyncProcessThreadPool(parquetProcessThreadPool, false );
     try {
       // Write using various encryption configurations.
       testWriteEncryptedParquetFiles(rootPath, DATA, threadPool);
@@ -365,6 +369,8 @@ public class TestPropertiesDrivenEncryption {
       threadPool.shutdown();
       parquetProcessThreadPool.shutdown();
       parquetIOThreadPool.shutdown();
+      ParquetFileReader.setAsyncIOThreadPool(prevIOThreadPool, false);
+      ParquetFileReader.setAsyncProcessThreadPool(prevProcThreadPool, false );
     }
   }
 
