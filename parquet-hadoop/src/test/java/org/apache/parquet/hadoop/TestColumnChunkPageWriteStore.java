@@ -28,7 +28,6 @@ import static org.mockito.Matchers.same;
 import static org.mockito.Mockito.inOrder;
 import static org.apache.parquet.column.Encoding.PLAIN;
 import static org.apache.parquet.column.Encoding.RLE;
-import static org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.GZIP;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.UNCOMPRESSED;
 import static org.apache.parquet.schema.OriginalType.UTF8;
@@ -48,7 +47,9 @@ import java.util.concurrent.Executors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.parquet.column.ParquetProperties;
+import org.apache.parquet.HadoopReadOptions;
+import org.apache.parquet.ParquetReadOptions;
+import org.apache.parquet.hadoop.util.HadoopInputFile;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InOrder;
@@ -126,47 +127,52 @@ public class TestColumnChunkPageWriteStore {
   private int pageSize = 1024;
   private int initialSize = 1024;
   private Configuration conf;
+  private ParquetReadOptions readOptions;
 
   @Before
   public void initConfiguration() {
     this.conf = new Configuration();
+    this.readOptions = HadoopReadOptions.builder(conf).build(); 
   }
 
   @Test
   public void test() throws Exception {
-    testInternal();
+    testInternal(this.readOptions);
   }
 
   @Test
   public void testAsync() throws Exception {
     ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(4);
     ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(4);
-    // if we change the default for the ParquetFileReader to async, the threadpool may be initialized
-    // by some other thread. In that case we want to make sure we restore the thread pool.
-    ExecutorService prevIOThreadPool = ParquetFileReader.ioThreadPool;
-    ExecutorService prevProcThreadPool = ParquetFileReader.processThreadPool;
-    ParquetFileReader.setAsyncIOThreadPool(parquetIOThreadPool, false);
-    ParquetFileReader.setAsyncProcessThreadPool(parquetProcessThreadPool, false );
+    ParquetReadOptions readOptions;
     try {
       conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
       conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(false));
-      testInternal();
+      readOptions = HadoopReadOptions.builder(conf)
+          .withIOThreadPool(parquetIOThreadPool)
+          .build();
+      testInternal(readOptions);
       conf.set("parquet.read.async.io.enabled", Boolean.toString(false));
       conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
-      testInternal();
+      readOptions = HadoopReadOptions.builder(conf)
+          .withProcessThreadPool(parquetProcessThreadPool)
+          .build();
+      testInternal(readOptions);
       conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
       conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
-      testInternal();
+      readOptions = HadoopReadOptions.builder(conf)
+          .withIOThreadPool(parquetIOThreadPool)
+          .withProcessThreadPool(parquetProcessThreadPool)
+          .build();
+      testInternal(readOptions);
     } finally {
       parquetProcessThreadPool.shutdown();
       parquetIOThreadPool.shutdown();
-      ParquetFileReader.setAsyncIOThreadPool(prevIOThreadPool, false);
-      ParquetFileReader.setAsyncProcessThreadPool(prevProcThreadPool, false);
     }
   }
 
 
- public void testInternal() throws Exception {
+ public void testInternal(ParquetReadOptions readOptions) throws Exception {
     Path file = new Path("target/test/TestColumnChunkPageWriteStore/test.parquet");
     Path root = file.getParent();
     FileSystem fs = file.getFileSystem(conf);
@@ -217,9 +223,11 @@ public class TestColumnChunkPageWriteStore {
     }
 
     {
-      ParquetMetadata footer = ParquetFileReader.readFooter(conf, file, NO_FILTER);
-      ParquetFileReader reader = new ParquetFileReader(
-          conf, footer.getFileMetaData(), file, footer.getBlocks(), schema.getColumns());
+//      ParquetMetadata footer = ParquetFileReader.readFooter(conf, file, NO_FILTER);
+//      ParquetFileReader reader = new ParquetFileReader(
+//          conf, footer.getFileMetaData(), file, footer.getBlocks(), schema.getColumns());
+      ParquetFileReader reader = new ParquetFileReader( HadoopInputFile.fromPath(file, conf), readOptions);
+      ParquetMetadata footer = reader.getFooter();
       PageReadStore rowGroup = reader.readNextRowGroup();
       PageReader pageReader = rowGroup.getPageReader(col);
       DataPageV2 page = (DataPageV2)pageReader.readPage();

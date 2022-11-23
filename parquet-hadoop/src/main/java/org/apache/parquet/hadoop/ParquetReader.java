@@ -26,6 +26,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
+import java.util.concurrent.ExecutorService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -324,6 +325,16 @@ public class ParquetReader<T> implements Closeable {
     
     public Builder<T> withDecryption(FileDecryptionProperties fileDecryptionProperties) {
       optionsBuilder.withDecryption(fileDecryptionProperties);
+      return this;
+    }
+
+    public Builder<T> withIOThreadPool(ExecutorService threadPool) {
+      optionsBuilder.withIOThreadPool(threadPool);
+      return this;
+    }
+    
+    public Builder<T> withProcessThreadPool(ExecutorService threadPool) {
+      optionsBuilder.withProcessThreadPool(threadPool);
       return this;
     }
 

@@ -19,6 +19,7 @@
 
 package org.apache.parquet;
 
+import java.util.concurrent.ExecutorService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.bytes.ByteBufferAllocator;
@@ -63,12 +64,14 @@ public class HadoopReadOptions extends ParquetReadOptions {
                             int maxAllocationSize,
                             Map<String, String> properties,
                             Configuration conf,
-                            FileDecryptionProperties fileDecryptionProperties) {
+                            FileDecryptionProperties fileDecryptionProperties,
+                            ExecutorService ioThreadPool,
+                            ExecutorService processThreadPool) {
     super(
         useSignedStringMinMax, useStatsFilter, useDictionaryFilter, useRecordFilter,
         useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, enableAsyncIOReader,
         enableParallelColumnReader, recordFilter, metadataFilter, codecFactory, allocator,
-        maxAllocationSize, properties, fileDecryptionProperties
+        maxAllocationSize, properties, fileDecryptionProperties, ioThreadPool, processThreadPool
     );
     this.conf = conf;
   }
@@ -134,7 +137,7 @@ public class HadoopReadOptions extends ParquetReadOptions {
         useSignedStringMinMax, useStatsFilter, useDictionaryFilter, useRecordFilter,
         useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, enableAsyncIOReader,
         enableParallelColumnReader, recordFilter, metadataFilter, codecFactory, allocator,
-        maxAllocationSize, properties, conf, fileDecryptionProperties);
+        maxAllocationSize, properties, conf, fileDecryptionProperties, ioThreadPool, processThreadPool);
     }
   }
 

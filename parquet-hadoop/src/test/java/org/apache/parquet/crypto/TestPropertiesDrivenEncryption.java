@@ -351,15 +351,7 @@ public class TestPropertiesDrivenEncryption {
     LOG.info("Run: isKeyMaterialInternalStorage={} isDoubleWrapping={} isWrapLocally={}",
       isKeyMaterialInternalStorage, isDoubleWrapping, isWrapLocally);
     KeyToolkit.removeCacheEntriesForAllTokens();
-    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
-    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
     ExecutorService threadPool = Executors.newFixedThreadPool(NUM_THREADS);
-    // if we change the default for the ParquetFileReader to async, the threadpool may be initialized
-    // by some other thread. In that case we want to make sure we restore the thread pool.
-    ExecutorService prevIOThreadPool = ParquetFileReader.ioThreadPool;
-    ExecutorService prevProcThreadPool = ParquetFileReader.processThreadPool;
-    ParquetFileReader.setAsyncIOThreadPool(parquetIOThreadPool, false);
-    ParquetFileReader.setAsyncProcessThreadPool(parquetProcessThreadPool, false );
     try {
       // Write using various encryption configurations.
       testWriteEncryptedParquetFiles(rootPath, DATA, threadPool);
@@ -367,10 +359,6 @@ public class TestPropertiesDrivenEncryption {
       testReadEncryptedParquetFiles(rootPath, DATA, threadPool, true);
     } finally {
       threadPool.shutdown();
-      parquetProcessThreadPool.shutdown();
-      parquetIOThreadPool.shutdown();
-      ParquetFileReader.setAsyncIOThreadPool(prevIOThreadPool, false);
-      ParquetFileReader.setAsyncProcessThreadPool(prevProcThreadPool, false );
     }
   }
 
@@ -580,11 +568,15 @@ public class TestPropertiesDrivenEncryption {
       hadoopConfig.set(ParquetInputFormat.ENABLE_ASYNC_IO_READER, "true");
       hadoopConfig.set(ParquetInputFormat.ENABLE_PARALLEL_COLUMN_READER, "true");
     }
+    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
+    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
 
     int rowNum = 0;
     try (ParquetReader<Group> reader = ParquetReader.builder(new GroupReadSupport(), file)
       .withConf(hadoopConfig)
       .withDecryption(fileDecryptionProperties)
+        .withIOThreadPool(parquetIOThreadPool)
+        .withProcessThreadPool(parquetProcessThreadPool)
       .build()) {
       for (Group group = reader.read(); group != null; group = reader.read()) {
         SingleRow rowExpected = data.get(rowNum++);
@@ -620,6 +612,9 @@ public class TestPropertiesDrivenEncryption {
       }
     } catch (Exception e) {
       checkResult(file.getName(), decryptionConfiguration, e);
+    } finally {
+      parquetProcessThreadPool.shutdown();
+      parquetIOThreadPool.shutdown();
     }
     hadoopConfig.unset("parquet.read.schema");
   }

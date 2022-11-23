@@ -128,7 +128,8 @@ public class FilePageReader implements Closeable {
   }
 
   void readAllRemainingPagesAsync() {
-    readFutures.offer(ParquetFileReader.processThreadPool.submit(new FilePageReaderTask(this)));
+    readFutures.offer(
+        parquetFileReader.options.getProcessThreadPool().submit(new FilePageReaderTask(this)));
   }
 
   void readAllRemainingPages() throws IOException {

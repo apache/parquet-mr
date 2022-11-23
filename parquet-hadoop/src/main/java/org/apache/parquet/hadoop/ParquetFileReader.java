@@ -122,47 +122,6 @@ public class ParquetFileReader implements Closeable {
 
   public static String PARQUET_READ_PARALLELISM = "parquet.metadata.read.parallelism";
 
-  // Thread pool to read column chunk data from disk. Applications should call setAsyncIOThreadPool
-  // to initialize this with their own implementations.
-  public static ExecutorService ioThreadPool;
-
-  // Thread pool to process pages for multiple columns in parallel. Applications should call
-  // setAsyncProcessThreadPool to initialize this with their own implementations.
-  // Default initialization is useful only for testing
-  public static ExecutorService processThreadPool;
-
-  public static void setAsyncIOThreadPool(ExecutorService ioPool, boolean shutdownCurrent) {
-    if (ioPool == null) {
-      LOG.warn("Attempt to set IO thread pool to null was ignored.");
-      return;
-    }
-    if (ioThreadPool != null && shutdownCurrent) {
-      ioThreadPool.shutdownNow();
-    }
-    ioThreadPool = ioPool;
-  }
-
-  public static void setAsyncProcessThreadPool(ExecutorService processPool, boolean shutdownCurrent) {
-    if (processPool == null) {
-      LOG.warn("Attempt to set process thread pool to null was ignored.");
-      return;
-    }
-    if (processThreadPool != null && shutdownCurrent) {
-      processThreadPool.shutdownNow();
-    }
-    processThreadPool = processPool;
-  }
-
-  public static void shutdownAsyncIOThreadPool() {
-    ioThreadPool.shutdownNow();
-    ioThreadPool = null;
-  }
-
-  public static void shutdownAsyncProcessThreadPool() {
-    processThreadPool.shutdownNow();
-    processThreadPool = null;
-  }
-
   final ParquetMetadataConverter converter;
 
   private final CRC32 crc;
@@ -838,7 +797,7 @@ public class ParquetFileReader implements Closeable {
 
   private boolean isAsyncIOReaderEnabled() {
     if (options.isAsyncIOReaderEnabled()) {
-      if (ioThreadPool != null) {
+      if (options.getIOThreadPool() != null) {
         return true;
       } else {
         LOG.debug("Parquet async IO is configured but the IO thread pool has not been " +
@@ -850,7 +809,7 @@ public class ParquetFileReader implements Closeable {
 
   boolean isParallelColumnReaderEnabled() {
     if (options.isParallelColumnReaderEnabled()) {
-      if (processThreadPool != null) {
+      if (options.getProcessThreadPool() != null) {
         return true;
       } else {
         LOG.debug("Parallel column reading is configured but the process thread pool has " +
@@ -1896,7 +1855,7 @@ public class ParquetFileReader implements Closeable {
       } else {
         // The underlying implementation will read the data from the input stream
         // asynchronously.
-        stream = ByteBufferInputStream.wrapAsync(ioThreadPool, is, buffers);
+        stream = ByteBufferInputStream.wrapAsync(options.getIOThreadPool(), is, buffers);
       }
       bufferInputStreams.add(stream);
       // report in a counter the data we just scanned

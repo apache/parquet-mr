@@ -171,13 +171,21 @@ public class TestMultipleWriteRead {
   }
 
   private void validateFile(Path file, Filter filter, Stream<Group> data) throws IOException {
+    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(4);
+    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(4);
+    
     try (ParquetReader<Group> reader = ParquetReader.builder(new GroupReadSupport(), file)
         .withConf(conf)
         .withFilter(filter)
+        .withIOThreadPool(parquetIOThreadPool)
+        .withProcessThreadPool(parquetProcessThreadPool)
         .build()) {
       for (Iterator<Group> it = data.iterator(); it.hasNext();) {
         assertEquals(it.next().toString(), reader.read().toString());
       }
+    } finally {
+      parquetProcessThreadPool.shutdown();
+      parquetIOThreadPool.shutdown();
     }
   }
 
@@ -265,30 +273,15 @@ public class TestMultipleWriteRead {
 
   @Test
   public void testWriteReadAsync() throws Throwable {
-    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(4);
-    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(4);
-    // if we change the default for the ParquetFileReader to async, the threadpool may be initialized
-    // by some other thread. In that case we want to make sure we restore the thread pool.
-    ExecutorService prevIOThreadPool = ParquetFileReader.ioThreadPool;
-    ExecutorService prevProcThreadPool = ParquetFileReader.processThreadPool;
-    ParquetFileReader.setAsyncIOThreadPool(parquetIOThreadPool, false);
-    ParquetFileReader.setAsyncProcessThreadPool(parquetProcessThreadPool, false );
-    try {
-      conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
-      conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(false));
-      runReadWriteTest();
-      conf.set("parquet.read.async.io.enabled", Boolean.toString(false));
-      conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
-      runReadWriteTest();
-      conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
-      conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
-      runReadWriteTest();
-    } finally {
-      parquetProcessThreadPool.shutdown();
-      parquetIOThreadPool.shutdown();
-      ParquetFileReader.setAsyncIOThreadPool(prevIOThreadPool, false);
-      ParquetFileReader.setAsyncProcessThreadPool(prevProcThreadPool, false);
-    }
+    conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
+    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(false));
+    runReadWriteTest();
+    conf.set("parquet.read.async.io.enabled", Boolean.toString(false));
+    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
+    runReadWriteTest();
+    conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
+    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
+    runReadWriteTest();
   }
 
 }

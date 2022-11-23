@@ -19,6 +19,7 @@
 
 package org.apache.parquet;
 
+import java.util.concurrent.ExecutorService;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.HeapByteBufferAllocator;
 import org.apache.parquet.compression.CompressionCodecFactory;
@@ -60,6 +61,10 @@ public class ParquetReadOptions {
   private final ParquetMetadataConverter.MetadataFilter metadataFilter;
   private final CompressionCodecFactory codecFactory;
   private final ByteBufferAllocator allocator;
+  // Thread pool to read column chunk data from storage.
+  private final ExecutorService ioThreadPool;
+  // Thread pool to process pages for multiple columns in parallel.
+  private final ExecutorService processThreadPool;
   private final int maxAllocationSize;
   private final Map<String, String> properties;
   private final FileDecryptionProperties fileDecryptionProperties;
@@ -79,7 +84,9 @@ public class ParquetReadOptions {
                      ByteBufferAllocator allocator,
                      int maxAllocationSize,
                      Map<String, String> properties,
-                     FileDecryptionProperties fileDecryptionProperties) {
+                     FileDecryptionProperties fileDecryptionProperties,
+                     ExecutorService ioThreadPool,
+                     ExecutorService processThreadPool) {
     this.useSignedStringMinMax = useSignedStringMinMax;
     this.useStatsFilter = useStatsFilter;
     this.useDictionaryFilter = useDictionaryFilter;
@@ -96,6 +103,8 @@ public class ParquetReadOptions {
     this.maxAllocationSize = maxAllocationSize;
     this.properties = Collections.unmodifiableMap(properties);
     this.fileDecryptionProperties = fileDecryptionProperties;
+    this.ioThreadPool = ioThreadPool;
+    this.processThreadPool = processThreadPool;
   }
 
   public boolean useSignedStringMinMax() {
@@ -165,6 +174,14 @@ public class ParquetReadOptions {
   public FileDecryptionProperties getDecryptionProperties() {
     return fileDecryptionProperties;
   }
+  
+  public ExecutorService getIOThreadPool() {
+    return ioThreadPool;
+  }
+  
+  public ExecutorService getProcessThreadPool() {
+    return processThreadPool;
+  }
 
   public boolean isEnabled(String property, boolean defaultValue) {
     Optional<String> propValue = Optional.ofNullable(properties.get(property));
@@ -194,6 +211,8 @@ public class ParquetReadOptions {
     protected int maxAllocationSize = ALLOCATION_SIZE_DEFAULT;
     protected Map<String, String> properties = new HashMap<>();
     protected FileDecryptionProperties fileDecryptionProperties = null;
+    protected ExecutorService ioThreadPool = null;
+    protected ExecutorService processThreadPool = null;
 
     public Builder useSignedStringMinMax(boolean useSignedStringMinMax) {
       this.useSignedStringMinMax = useSignedStringMinMax;
@@ -318,6 +337,16 @@ public class ParquetReadOptions {
       this.fileDecryptionProperties = fileDecryptionProperties;
       return this;
     }
+    
+    public Builder withIOThreadPool(ExecutorService ioThreadPool) {
+      this.ioThreadPool = ioThreadPool;
+      return this;
+    }
+    
+    public Builder withProcessThreadPool(ExecutorService processThreadPool) {
+      this.processThreadPool = processThreadPool;
+      return this;
+    }
 
     public Builder set(String key, String value) {
       properties.put(key, value);
@@ -337,6 +366,8 @@ public class ParquetReadOptions {
       withAllocator(options.allocator);
       withPageChecksumVerification(options.usePageChecksumVerification);
       withDecryption(options.fileDecryptionProperties);
+      withIOThreadPool(options.ioThreadPool);
+      withProcessThreadPool(options.processThreadPool);
       for (Map.Entry<String, String> keyValue : options.properties.entrySet()) {
         set(keyValue.getKey(), keyValue.getValue());
       }
@@ -348,7 +379,7 @@ public class ParquetReadOptions {
         useSignedStringMinMax, useStatsFilter, useDictionaryFilter, useRecordFilter,
         useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, enableAsyncIOReader,
         enableParallelColumnReader, recordFilter, metadataFilter, codecFactory, allocator,
-        maxAllocationSize, properties, fileDecryptionProperties);
+        maxAllocationSize, properties, fileDecryptionProperties, ioThreadPool, processThreadPool);
     }
   }
 }
