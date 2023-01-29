@@ -53,22 +53,26 @@ public class ColumnMaskingCommand extends BaseCommand {
 
   @Parameter(
     names = {"-m", "--mode"},
-    description = "<mask mode: nullify>")
+    description = "<mask mode: nullify>",
+    required = true)
   String mode;
 
   @Parameter(
     names = {"-i", "--input"},
-    description = "<input parquet file path>")
+    description = "<input parquet file path>",
+    required = true)
   String input;
 
   @Parameter(
     names = {"-o", "--output"},
-    description = "<output parquet file path>")
+    description = "<output parquet file path>",
+    required = true)
   String output;
 
   @Parameter(
     names = {"-c", "--columns"},
-    description = "<columns to be replaced with masked value>")
+    description = "<columns to be replaced with masked value>",
+    required = true)
   List<String> cols;
 
   @Override
@@ -104,7 +108,7 @@ public class ColumnMaskingCommand extends BaseCommand {
   public List<String> getExamples() {
     return Lists.newArrayList(
         "# Replace columns with masked values and write to a new Parquet file",
-        " -m nullify -i input.parquet -o output.parquet -c col1_name"
+        "-m nullify -i input.parquet -o output.parquet -c col1_name"
     );
   }
 }

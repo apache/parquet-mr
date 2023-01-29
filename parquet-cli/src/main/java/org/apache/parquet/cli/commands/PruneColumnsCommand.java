@@ -41,19 +41,19 @@ public class PruneColumnsCommand extends BaseCommand {
   @Parameter(
     names = {"-i", "--input"},
     description = "<input parquet file path>",
-    required = false)
+    required = true)
   String input;
 
   @Parameter(
     names = {"-o", "--output"},
     description = "<output parquet file path>",
-    required = false)
+    required = true)
   String output;
 
   @Parameter(
     names = {"-c", "--columns"},
     description = "<columns to be replaced with masked value>",
-    required = false)
+    required = true)
   List<String> cols;
 
   @Override
@@ -75,7 +75,7 @@ public class PruneColumnsCommand extends BaseCommand {
   public List<String> getExamples() {
     return Lists.newArrayList(
       "# Removes specified columns and write to a new Parquet file",
-      " -i input.parquet -o output.parquet -c col1_name"
+      "-i input.parquet -o output.parquet -c col1_name"
     );
   }
 }

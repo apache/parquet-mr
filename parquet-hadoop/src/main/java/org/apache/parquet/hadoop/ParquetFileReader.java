@@ -714,7 +714,14 @@ public class ParquetFileReader implements Closeable {
                                       .withDecryption(fileDecryptor.getDecryptionProperties())
                                       .build();
     }
-    this.blocks = filterRowGroups(blocks);
+    try {
+      this.blocks = filterRowGroups(blocks);
+    } catch (Exception e) {
+      // In case that filterRowGroups throws an exception in the constructor, the new stream
+      // should be closed. Otherwise, there's no way to close this outside.
+      f.close();
+      throw e;
+    }
     this.blockIndexStores = listWithNulls(this.blocks.size());
     this.blockRowRanges = listWithNulls(this.blocks.size());
     for (ColumnDescriptor col : columns) {
@@ -758,7 +765,14 @@ public class ParquetFileReader implements Closeable {
                                       .build();
     }
     this.footer = footer;
-    this.blocks = filterRowGroups(footer.getBlocks());
+    try {
+      this.blocks = filterRowGroups(footer.getBlocks());
+    } catch (Exception e) {
+      // In case that filterRowGroups throws an exception in the constructor, the new stream
+      // should be closed. Otherwise, there's no way to close this outside.
+      f.close();
+      throw e;
+    }
     this.blockIndexStores = listWithNulls(this.blocks.size());
     this.blockRowRanges = listWithNulls(this.blocks.size());
     for (ColumnDescriptor col : footer.getFileMetaData().getSchema().getColumns()) {
@@ -786,7 +800,14 @@ public class ParquetFileReader implements Closeable {
       this.fileDecryptor = null; // Plaintext file. No need in decryptor
     }
 
-    this.blocks = filterRowGroups(footer.getBlocks());
+    try {
+      this.blocks = filterRowGroups(footer.getBlocks());
+    } catch (Exception e) {
+      // In case that filterRowGroups throws an exception in the constructor, the new stream
+      // should be closed. Otherwise, there's no way to close this outside.
+      f.close();
+      throw e;
+    }
     this.blockIndexStores = listWithNulls(this.blocks.size());
     this.blockRowRanges = listWithNulls(this.blocks.size());
     for (ColumnDescriptor col : footer.getFileMetaData().getSchema().getColumns()) {
@@ -929,7 +950,15 @@ public class ParquetFileReader implements Closeable {
    * @return the PageReadStore which can provide PageReaders for each column.
    */
   public PageReadStore readNextRowGroup() throws IOException {
-    ColumnChunkPageReadStore rowGroup = internalReadRowGroup(currentBlock);
+    ColumnChunkPageReadStore rowGroup = null;
+    try {
+      rowGroup = internalReadRowGroup(currentBlock);
+    } catch (ParquetEmptyBlockException e) {
+      LOG.warn("Read empty block at index {} from {}", currentBlock, getFile());
+      advanceToNextBlock();
+      return readNextRowGroup();
+    }
+
     if (rowGroup == null) {
       return null;
     }
@@ -953,7 +982,7 @@ public class ParquetFileReader implements Closeable {
     }
     BlockMetaData block = blocks.get(blockIndex);
     if (block.getRowCount() == 0) {
-      throw new RuntimeException("Illegal row group of 0 rows");
+      throw new ParquetEmptyBlockException("Illegal row group of 0 rows");
     }
     ColumnChunkPageReadStore rowGroup = new ColumnChunkPageReadStore(block.getRowCount(), block.getRowIndexOffset());
     // prepare the list of consecutive parts to read them in one scan
@@ -1016,7 +1045,7 @@ public class ParquetFileReader implements Closeable {
 
     BlockMetaData block = blocks.get(blockIndex);
     if (block.getRowCount() == 0) {
-      throw new RuntimeException("Illegal row group of 0 rows");
+      throw new ParquetEmptyBlockException("Illegal row group of 0 rows");
     }
 
     RowRanges rowRanges = getRowRanges(blockIndex);
@@ -1053,7 +1082,10 @@ public class ParquetFileReader implements Closeable {
     }
     BlockMetaData block = blocks.get(currentBlock);
     if (block.getRowCount() == 0L) {
-      throw new RuntimeException("Illegal row group of 0 rows");
+      LOG.warn("Read empty block at index {} from {}", currentBlock, getFile());
+      // Skip the empty block
+      advanceToNextBlock();
+      return readNextFilteredRowGroup();
     }
     RowRanges rowRanges = getRowRanges(currentBlock);
     long rowCount = rowRanges.rowCount();

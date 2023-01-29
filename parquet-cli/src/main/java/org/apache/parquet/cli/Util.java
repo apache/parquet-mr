@@ -151,6 +151,8 @@ public class Util {
         return "B";
       case LZ4:
         return "4";
+      case LZ4_RAW:
+        return "F";
       case ZSTD:
         return "Z";
       default:

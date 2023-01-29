@@ -19,6 +19,7 @@
 package org.apache.parquet.column.impl;
 
 import java.io.IOException;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
 import org.apache.parquet.column.ColumnDescriptor;
@@ -90,9 +91,10 @@ abstract class ColumnWriterBase implements ColumnWriter {
     int maxBloomFilterSize = props.getMaxBloomFilterBytes();
 
     OptionalLong ndv = props.getBloomFilterNDV(path);
+    OptionalDouble fpp = props.getBloomFilterFPP(path);
     // If user specify the column NDV, we construct Bloom filter from it.
     if (ndv.isPresent()) {
-      int optimalNumOfBits = BlockSplitBloomFilter.optimalNumOfBits(ndv.getAsLong(), BlockSplitBloomFilter.DEFAULT_FPP);
+      int optimalNumOfBits = BlockSplitBloomFilter.optimalNumOfBits(ndv.getAsLong(), fpp.getAsDouble());
       this.bloomFilter = new BlockSplitBloomFilter(optimalNumOfBits / 8, maxBloomFilterSize);
     } else {
       this.bloomFilter = new BlockSplitBloomFilter(maxBloomFilterSize);

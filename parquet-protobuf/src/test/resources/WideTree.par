@@ -1,0 +1,27 @@
+message Trees.WideTree {
+  optional group value = 1 {
+    optional binary type_url (STRING) = 1;
+    optional binary value = 2;
+  }
+  optional group children (LIST) = 2 {
+    repeated group list {
+      optional group element {
+        optional group value = 1 {
+          optional binary type_url (STRING) = 1;
+          optional binary value = 2;
+        }
+        optional group children (LIST) = 2 {
+          repeated group list {
+            optional group element {
+              optional group value = 1 {
+                optional binary type_url (STRING) = 1;
+                optional binary value = 2;
+              }
+              optional binary children = 2;
+            }
+          }
+        }
+      }
+    }
+  }
+}

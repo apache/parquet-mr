@@ -18,6 +18,8 @@
  */
 package org.apache.parquet.proto;
 
+import com.google.common.base.Charsets;
+import com.google.common.io.Resources;
 import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 import com.google.protobuf.MessageOrBuilder;
@@ -212,4 +214,7 @@ public class TestUtils {
     return file;
   }
 
+  public static String readResource(final String filename) throws IOException {
+    return Resources.toString(Resources.getResource(filename), Charsets.UTF_8);
+  }
 }

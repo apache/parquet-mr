@@ -1,0 +1,110 @@
+message google.protobuf.Struct {
+  optional group fields (MAP) = 1 {
+    repeated group key_value {
+      required binary key (STRING);
+      optional group value {
+        optional binary null_value (ENUM) = 1;
+        optional double number_value = 2;
+        optional binary string_value (STRING) = 3;
+        optional boolean bool_value = 4;
+        optional group struct_value = 5 {
+          optional group fields (MAP) = 1 {
+            repeated group key_value {
+              required binary key (STRING);
+              optional group value {
+                optional binary null_value (ENUM) = 1;
+                optional double number_value = 2;
+                optional binary string_value (STRING) = 3;
+                optional boolean bool_value = 4;
+                optional group struct_value = 5 {
+                  optional group fields (MAP) = 1 {
+                    repeated group key_value {
+                      required binary key (STRING);
+                      optional group value {
+                        optional binary null_value (ENUM) = 1;
+                        optional double number_value = 2;
+                        optional binary string_value (STRING) = 3;
+                        optional boolean bool_value = 4;
+                        optional binary struct_value = 5;
+                        optional group list_value = 6 {
+                          optional binary values = 1;
+                        }
+                      }
+                    }
+                  }
+                }
+                optional group list_value = 6 {
+                  optional group values (LIST) = 1 {
+                    repeated group list {
+                      optional group element {
+                        optional binary null_value (ENUM) = 1;
+                        optional double number_value = 2;
+                        optional binary string_value (STRING) = 3;
+                        optional boolean bool_value = 4;
+                        optional group struct_value = 5 {
+                          optional binary fields = 1;
+                        }
+                        optional group list_value = 6 {
+                          optional binary values = 1;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        optional group list_value = 6 {
+          optional group values (LIST) = 1 {
+            repeated group list {
+              optional group element {
+                optional binary null_value (ENUM) = 1;
+                optional double number_value = 2;
+                optional binary string_value (STRING) = 3;
+                optional boolean bool_value = 4;
+                optional group struct_value = 5 {
+                  optional group fields (MAP) = 1 {
+                    repeated group key_value {
+                      required binary key (STRING);
+                      optional group value {
+                        optional binary null_value (ENUM) = 1;
+                        optional double number_value = 2;
+                        optional binary string_value (STRING) = 3;
+                        optional boolean bool_value = 4;
+                        optional group struct_value = 5 {
+                          optional binary fields = 1;
+                        }
+                        optional group list_value = 6 {
+                          optional binary values = 1;
+                        }
+                      }
+                    }
+                  }
+                }
+                optional group list_value = 6 {
+                  optional group values (LIST) = 1 {
+                    repeated group list {
+                      optional group element {
+                        optional binary null_value (ENUM) = 1;
+                        optional double number_value = 2;
+                        optional binary string_value (STRING) = 3;
+                        optional boolean bool_value = 4;
+                        optional group struct_value = 5 {
+                          optional binary fields = 1;
+                        }
+                        optional group list_value = 6 {
+                          optional binary values = 1;
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

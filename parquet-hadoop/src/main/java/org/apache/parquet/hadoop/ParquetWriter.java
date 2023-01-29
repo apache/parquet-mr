@@ -603,6 +603,11 @@ public class ParquetWriter<T> implements Closeable {
       return self();
     }
 
+    public SELF withBloomFilterFPP(String columnPath, double fpp) {
+      encodingPropsBuilder.withBloomFilterFPP(columnPath, fpp);
+      return self();
+    }
+
     /**
      * Sets the bloom filter enabled/disabled
      *
@@ -646,6 +651,28 @@ public class ParquetWriter<T> implements Closeable {
      */
     public SELF withMaxRowCountForPageSizeCheck(int max) {
       encodingPropsBuilder.withMaxRowCountForPageSizeCheck(max);
+      return self();
+    }
+
+    /**
+     * Sets the length to be used for truncating binary values in a binary column index.
+     *
+     * @param length the length to truncate to
+     * @return this builder for method chaining
+     */
+    public SELF withColumnIndexTruncateLength(int length) {
+      encodingPropsBuilder.withColumnIndexTruncateLength(length);
+      return self();
+    }
+
+    /**
+     * Sets the length which the min/max binary values in row groups are truncated to.
+     *
+     * @param length the length to truncate to
+     * @return this builder for method chaining
+     */
+    public SELF withStatisticsTruncateLength(int length) {
+      encodingPropsBuilder.withStatisticsTruncateLength(length);
       return self();
     }
 

@@ -21,10 +21,12 @@ package org.apache.parquet.format.converter;
 import static java.util.Optional.empty;
 
 import static java.util.Optional.of;
+import static org.apache.parquet.format.Util.readColumnMetaData;
 import static org.apache.parquet.format.Util.readFileMetaData;
 import static org.apache.parquet.format.Util.writeColumnMetaData;
 import static org.apache.parquet.format.Util.writePageHeader;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -563,7 +565,7 @@ public class ParquetMetadataConverter {
                                                   columnMetaData.getPath(), e);
         }
         columnChunk.setEncrypted_column_metadata(tempOutStream.toByteArray());
-        // Keep redacted metadata version for old readers
+        // Keep redacted metadata version
         if (!fileEncryptor.isFooterEncrypted()) {
           ColumnMetaData metaDataRedacted  = metaData.deepCopy();
           if (metaDataRedacted.isSetStatistics()) metaDataRedacted.unsetStatistics();
@@ -1448,15 +1450,19 @@ public class ParquetMetadataConverter {
       @Override
       public FileMetaDataAndRowGroupOffsetInfo visit(OffsetMetadataFilter filter) throws IOException {
         FileMetaData fileMetadata = readFileMetaData(from, footerDecryptor, encryptedFooterAAD);
+        // We must generate the map *before* filtering because it modifies `fileMetadata`.
+        Map<RowGroup, Long> rowGroupToRowIndexOffsetMap = generateRowGroupOffsets(fileMetadata);
         FileMetaData filteredFileMetadata = filterFileMetaDataByStart(fileMetadata, filter);
-        return new FileMetaDataAndRowGroupOffsetInfo(filteredFileMetadata, generateRowGroupOffsets(fileMetadata));
+        return new FileMetaDataAndRowGroupOffsetInfo(filteredFileMetadata, rowGroupToRowIndexOffsetMap);
       }
 
       @Override
       public FileMetaDataAndRowGroupOffsetInfo visit(RangeMetadataFilter filter) throws IOException {
         FileMetaData fileMetadata = readFileMetaData(from, footerDecryptor, encryptedFooterAAD);
+        // We must generate the map *before* filtering because it modifies `fileMetadata`.
+        Map<RowGroup, Long> rowGroupToRowIndexOffsetMap = generateRowGroupOffsets(fileMetadata);
         FileMetaData filteredFileMetadata = filterFileMetaDataByMidpoint(fileMetadata, filter);
-        return new FileMetaDataAndRowGroupOffsetInfo(filteredFileMetadata, generateRowGroupOffsets(fileMetadata));
+        return new FileMetaDataAndRowGroupOffsetInfo(filteredFileMetadata, rowGroupToRowIndexOffsetMap);
       }
     });
     FileMetaData fileMetaData = fileMetaDataAndRowGroupInfo.fileMetadata;
@@ -1545,7 +1551,7 @@ public class ParquetMetadataConverter {
           ColumnCryptoMetaData cryptoMetaData = columnChunk.getCrypto_metadata();
           ColumnChunkMetaData column = null;
           ColumnPath columnPath = null;
-          boolean encryptedMetadata = false;
+          boolean lazyMetadataDecryption = false;
 
           if (null == cryptoMetaData) { // Plaintext column
             columnPath = getPath(metaData);
@@ -1556,25 +1562,32 @@ public class ParquetMetadataConverter {
           } else {  // Encrypted column
             boolean encryptedWithFooterKey = cryptoMetaData.isSetENCRYPTION_WITH_FOOTER_KEY();
             if (encryptedWithFooterKey) { // Column encrypted with footer key
-              if (!encryptedFooter) {
-                throw new ParquetCryptoRuntimeException("Column encrypted with footer key in file with plaintext footer");
+              if (null == fileDecryptor) {
+                throw new ParquetCryptoRuntimeException("Column encrypted with footer key: No keys available");
               }
               if (null == metaData) {
                 throw new ParquetCryptoRuntimeException("ColumnMetaData not set in Encryption with Footer key");
               }
-              if (null == fileDecryptor) {
-                throw new ParquetCryptoRuntimeException("Column encrypted with footer key: No keys available");
-              }
               columnPath = getPath(metaData);
+              if (!encryptedFooter) { // Unencrypted footer. Decrypt full column metadata, using footer key
+                ByteArrayInputStream tempInputStream = new ByteArrayInputStream(columnChunk.getEncrypted_column_metadata());
+                byte[] columnMetaDataAAD = AesCipher.createModuleAAD(fileDecryptor.getFileAAD(), ModuleType.ColumnMetaData,
+                  rowGroup.getOrdinal(), columnOrdinal, -1);
+                try {
+                  metaData = readColumnMetaData(tempInputStream, fileDecryptor.fetchFooterDecryptor(), columnMetaDataAAD);
+                } catch (IOException e) {
+                  throw new ParquetCryptoRuntimeException(columnPath + ". Failed to decrypt column metadata", e);
+                }
+              }
               fileDecryptor.setColumnCryptoMetadata(columnPath, true, true, (byte[]) null, columnOrdinal);
             }  else { // Column encrypted with column key
               // setColumnCryptoMetadata triggers KMS interaction, hence delayed until this column is projected
-              encryptedMetadata = true;
+              lazyMetadataDecryption = true;
             }
           }
 
           String createdBy = parquetMetadata.getCreated_by();
-          if (!encryptedMetadata) { // unencrypted column, or encrypted with footer key
+          if (!lazyMetadataDecryption) { // full column metadata (with stats) is available
             column = buildColumnChunkMetaData(metaData, columnPath,
                 messageType.getType(columnPath.toArray()).asPrimitiveType(), createdBy);
             column.setRowGroupOrdinal(rowGroup.getOrdinal());

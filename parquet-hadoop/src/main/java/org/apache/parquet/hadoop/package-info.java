@@ -29,7 +29,5 @@
  * In a standalone java app:
  * @see org.apache.parquet.hadoop.ParquetWriter
  * @see org.apache.parquet.hadoop.ParquetReader
- *
- * </p>
  */
 package org.apache.parquet.hadoop;

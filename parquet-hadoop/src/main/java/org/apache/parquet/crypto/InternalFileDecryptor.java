@@ -99,9 +99,6 @@ public class InternalFileDecryptor {
     if (!fileCryptoMetaDataProcessed) {
       throw new ParquetCryptoRuntimeException("Haven't parsed the file crypto metadata yet");
     }
-    if (!encryptedFooter) {
-      return null;
-    }
 
     return getThriftModuleDecryptor(null);
   }

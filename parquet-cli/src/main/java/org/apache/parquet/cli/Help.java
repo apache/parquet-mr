@@ -59,10 +59,13 @@ public class Help implements Command {
         }
 
         boolean hasRequired = false;
-        console.info("\nUsage: {} [general options] {} {} [command options]",
-            new Object[] {
-                programName, cmd,
-                commander.getMainParameterDescription()});
+        if (commander.getParameters().stream().anyMatch(p -> p.getNames().isEmpty())) {
+          console.info("\nUsage: {} [general options] {} {} [command options]",
+            new Object[] { programName, cmd, commander.getMainParameterDescription() });
+        } else {
+          console.info("\nUsage: {} [general options] {} [command options]",
+            new Object[] { programName, cmd });
+        }
         console.info("\n  Description:");
         console.info("\n    {}", jc.getCommandDescription(cmd));
         if (!commander.getParameters().isEmpty()) {

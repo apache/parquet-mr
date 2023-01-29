@@ -176,4 +176,28 @@ public interface BloomFilter {
    * @return compress algorithm that the bloom filter apply
    */
   Compression getCompression();
+
+  /**
+   * Determines whether a given Bloom filter can be merged into this Bloom filter. For two Bloom
+   * filters to merge, they must:
+   * <ul>
+   * <li> have the same bit size </li>
+   * <li> have the same algorithm</li>
+   * <li> have the same hash strategy</li>
+   * </ul>
+   *
+   * @param otherBloomFilter The Bloom filter to merge this Bloom filter with.
+   */
+  default boolean canMergeFrom(BloomFilter otherBloomFilter) {
+    throw new UnsupportedOperationException("Merge API is not implemented.");
+  }
+
+  /**
+   * Merges this Bloom filter with another Bloom filter by performing a bitwise OR of the underlying bitsets
+   *
+   * @param otherBloomFilter The Bloom filter to merge this Bloom filter with.
+   */
+  default void merge(BloomFilter otherBloomFilter) throws IOException {
+    throw new UnsupportedOperationException("Merge API is not implemented.");
+  }
 }

@@ -51,6 +51,7 @@ public class TestParquetReader {
   private static final List<PhoneBookWriter.User> DATA = Collections.unmodifiableList(makeUsers(1000));
 
   private final Path file;
+  private final long fileSize;
 
   private static Path createPathFromCP(String path) {
     try {
@@ -60,8 +61,9 @@ public class TestParquetReader {
     }
   }
 
-  public TestParquetReader(Path file) {
+  public TestParquetReader(Path file) throws IOException {
     this.file = file;
+    this.fileSize = file.getFileSystem(new Configuration()).getFileStatus(file).getLen();
   }
 
   @Parameterized.Parameters
@@ -127,12 +129,18 @@ public class TestParquetReader {
 
   private List<PhoneBookWriter.User> readUsers(FilterCompat.Filter filter, boolean useOtherFiltering, boolean useColumnIndexFilter)
     throws IOException {
+    return readUsers(filter, useOtherFiltering, useColumnIndexFilter, 0, this.fileSize);
+  }
+
+  private List<PhoneBookWriter.User> readUsers(FilterCompat.Filter filter, boolean useOtherFiltering, boolean useColumnIndexFilter, long rangeStart, long rangeEnd)
+    throws IOException {
     return PhoneBookWriter.readUsers(ParquetReader.builder(new GroupReadSupport(), file)
       .withFilter(filter)
       .useDictionaryFilter(useOtherFiltering)
       .useStatsFilter(useOtherFiltering)
       .useRecordFilter(useOtherFiltering)
-      .useColumnIndexFilter(useColumnIndexFilter), true);
+      .useColumnIndexFilter(useColumnIndexFilter)
+      .withFileRange(rangeStart, rangeEnd), true);
   }
 
   @Test
@@ -155,6 +163,15 @@ public class TestParquetReader {
     }
     // reader.read() returned null and so reader doesn't have any more rows.
     assertEquals(reader.getCurrentRowIndex(), -1);
+  }
+
+  @Test
+  public void testRangeFiltering() throws Exception {
+    // The readUsers also validates the rowIndex for each returned row.
+    readUsers(FilterCompat.NOOP, false, false, this.fileSize / 2, this.fileSize);
+    readUsers(FilterCompat.NOOP, true, false, this.fileSize / 3, this.fileSize * 3 / 4);
+    readUsers(FilterCompat.NOOP, false, true, this.fileSize / 4, this.fileSize / 2);
+    readUsers(FilterCompat.NOOP, true, true, this.fileSize * 3 / 4, this.fileSize);
   }
 
   @Test

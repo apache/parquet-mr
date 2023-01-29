@@ -151,6 +151,7 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   public static final String BLOOM_FILTER_ENABLED = "parquet.bloom.filter.enabled";
   public static final String BLOOM_FILTER_EXPECTED_NDV = "parquet.bloom.filter.expected.ndv";
   public static final String BLOOM_FILTER_MAX_BYTES = "parquet.bloom.filter.max.bytes";
+  public static final String BLOOM_FILTER_FPP = "parquet.bloom.filter.fpp";
   public static final String PAGE_ROW_COUNT_LIMIT = "parquet.page.row.count.limit";
   public static final String PAGE_WRITE_CHECKSUM_ENABLED = "parquet.page.write-checksum.enabled";
 
@@ -226,6 +227,7 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   public static boolean getBloomFilterEnabled(Configuration conf) {
     return conf.getBoolean(BLOOM_FILTER_ENABLED, DEFAULT_BLOOM_FILTER_ENABLED);
   }
+
   public static int getBlockSize(JobContext jobContext) {
     return getBlockSize(getConfiguration(jobContext));
   }
@@ -458,6 +460,8 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
         .withColumnConfig(BLOOM_FILTER_ENABLED, key -> conf.getBoolean(key, false),
             propsBuilder::withBloomFilterEnabled)
         .withColumnConfig(BLOOM_FILTER_EXPECTED_NDV, key -> conf.getLong(key, -1L), propsBuilder::withBloomFilterNDV)
+        .withColumnConfig(BLOOM_FILTER_FPP, key -> conf.getDouble(key, ParquetProperties.DEFAULT_BLOOM_FILTER_FPP),
+            propsBuilder::withBloomFilterFPP)
         .parseConfig(conf);
 
     ParquetProperties props = propsBuilder.build();
@@ -472,9 +476,9 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
     LOG.debug("Parquet properties are:\n{}", props);
 
     WriteContext fileWriteContext = writeSupport.init(conf);
-    
+
     FileEncryptionProperties encryptionProperties = createEncryptionProperties(conf, file, fileWriteContext);
-    
+
     ParquetFileWriter w = new ParquetFileWriter(HadoopOutputFile.fromPath(file, conf),
         fileWriteContext.getSchema(), mode, blockSize, maxPaddingSize, props.getColumnIndexTruncateLength(),
         props.getStatisticsTruncateLength(), props.getPageWriteChecksumEnabled(), encryptionProperties);

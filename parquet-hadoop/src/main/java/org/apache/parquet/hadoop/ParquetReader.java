@@ -229,7 +229,7 @@ public class ParquetReader<T> implements Closeable {
 
       // previous versions didn't use the builder, so may set filter before conf. this maintains
       // compatibility for filter. other options are reset by a new conf.
-      this.optionsBuilder = HadoopReadOptions.builder(conf);
+      this.optionsBuilder = HadoopReadOptions.builder(conf, path);
       if (filter != null) {
         optionsBuilder.withRecordFilter(filter);
       }

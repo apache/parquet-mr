@@ -39,13 +39,17 @@ import static org.apache.parquet.schema.MessageTypeParser.parseMessageType;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 
 import net.openhft.hashing.LongHashFunction;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ParquetProperties;
+import org.apache.parquet.column.values.bloomfilter.BlockSplitBloomFilter;
 import org.apache.parquet.column.values.bloomfilter.BloomFilter;
 import org.apache.parquet.example.data.GroupFactory;
 import org.apache.parquet.hadoop.example.ExampleParquetWriter;
@@ -278,6 +282,64 @@ public class TestParquetWriter {
       for (String name : testNames) {
         assertTrue(bloomFilter.findHash(
           LongHashFunction.xx(0).hashBytes(Binary.fromString(name).toByteBuffer())));
+      }
+    }
+  }
+
+  @Test
+  public void testParquetFileWithBloomFilterWithFpp() throws IOException {
+    int totalCount = 100000;
+    double[] testFpp = {0.01, 0.05, 0.10, 0.15, 0.20, 0.25};
+    int randomStrLen = 12;
+
+    Set<String> distinctStrings = new HashSet<>();
+    while (distinctStrings.size() < totalCount) {
+      String str = RandomStringUtils.randomAlphabetic(randomStrLen);
+      distinctStrings.add(str);
+    }
+
+    MessageType schema = Types.buildMessage().
+      required(BINARY).as(stringType()).named("name").named("msg");
+
+    Configuration conf = new Configuration();
+    GroupWriteSupport.setSchema(schema, conf);
+
+    GroupFactory factory = new SimpleGroupFactory(schema);
+    for (int i = 0; i < testFpp.length; i++) {
+      File file = temp.newFile();
+      file.delete();
+      Path path = new Path(file.getAbsolutePath());
+      try (ParquetWriter<Group> writer = ExampleParquetWriter.builder(path)
+        .withPageRowCountLimit(10)
+        .withConf(conf)
+        .withDictionaryEncoding(false)
+        .withBloomFilterEnabled("name", true)
+        .withBloomFilterNDV("name", totalCount)
+        .withBloomFilterFPP("name", testFpp[i])
+        .build()) {
+        java.util.Iterator<String> iterator = distinctStrings.iterator();
+        while (iterator.hasNext()) {
+          writer.write(factory.newGroup().append("name", iterator.next()));
+        }
+      }
+      distinctStrings.clear();
+
+      try (ParquetFileReader reader = ParquetFileReader.open(HadoopInputFile.fromPath(path, new Configuration()))) {
+        BlockMetaData blockMetaData = reader.getFooter().getBlocks().get(0);
+        BloomFilter bloomFilter = reader.getBloomFilterDataReader(blockMetaData)
+          .readBloomFilter(blockMetaData.getColumns().get(0));
+
+        // The exist counts the number of times FindHash returns true.
+        int exist = 0;
+        while (distinctStrings.size() < totalCount) {
+          String str = RandomStringUtils.randomAlphabetic(randomStrLen - 2);
+          if (distinctStrings.add(str) &&
+            bloomFilter.findHash(LongHashFunction.xx(0).hashBytes(Binary.fromString(str).toByteBuffer()))) {
+            exist++;
+          }
+        }
+        // The exist should be less than totalCount * fpp. Add 10% here for error space.
+        assertTrue(exist < totalCount * (testFpp[i] * 1.1) && exist > 0);
       }
     }
   }

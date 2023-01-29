@@ -31,7 +31,7 @@
 
   <properties>
     <elephant-bird.version>4.4</elephant-bird.version>
-    <protobuf.version>3.5.1</protobuf.version>
+    <protobuf.version>3.17.3</protobuf.version>
     <truth-proto-extension.version>1.0</truth-proto-extension.version>
   </properties>
 
@@ -47,10 +47,20 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+      <version>${jsr305.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.google.truth.extensions</groupId>
       <artifactId>truth-proto-extension</artifactId>
       <version>${truth-proto-extension.version}</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>${guava.version}</version>
     </dependency>
     <dependency>
       <groupId>com.google.protobuf</groupId>
@@ -131,6 +141,12 @@
   </developers>
 
   <build>
+    <testResources>
+      <testResource>
+        <directory>src/test/resources</directory>
+      </testResource>
+    </testResources>
+
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -177,6 +193,7 @@
               <protocArtifact>com.google.protobuf:protoc:${protobuf.version}</protocArtifact>
               <addSources>test</addSources>
               <addProtoSources>all</addProtoSources>
+              <includeMavenTypes>direct</includeMavenTypes>
               <outputDirectory>${project.build.directory}/generated-test-sources/java</outputDirectory>
               <inputDirectories>
                 <include>src/test/resources</include>
@@ -185,7 +202,6 @@
           </execution>
         </executions>
       </plugin>
-
     </plugins>
   </build>
 

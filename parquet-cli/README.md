@@ -31,13 +31,13 @@ mvn clean install -DskipTests
 The build produces a shaded Jar that can be run using the `hadoop` command:
 
 ```
-hadoop jar parquet-cli-1.9.1-runtime.jar org.apache.parquet.cli.Main
+hadoop jar parquet-cli-1.12.3-runtime.jar org.apache.parquet.cli.Main
 ```
 
 For a shorter command-line invocation, add an alias to your shell like this:
 
 ```
-alias parquet="hadoop jar /path/to/parquet-cli-1.9.1-runtime.jar org.apache.parquet.cli.Main --dollar-zero parquet"
+alias parquet="hadoop jar /path/to/parquet-cli-1.12.3-runtime.jar org.apache.parquet.cli.Main --dollar-zero parquet"
 ```
 
 ### Running without Hadoop
@@ -51,8 +51,13 @@ mvn dependency:copy-dependencies
 Then, run the command-line and add `target/dependencies/*` to the classpath:
 
 ```
-java -cp 'target/*:target/dependency/*' org.apache.parquet.cli.Main
+java -cp 'target/parquet-cli-1.12.3.jar:target/dependency/*' org.apache.parquet.cli.Main
 ```
+
+Note that you shouldn't include the runtime jar used above into the classpath in this case.
+In that jar, the `org.apache.avro package` is relocated for avoiding conflict with Hadoop's one.
+That relocation changes method signatures, so it can cause `NoSuchMethodError` depending on the class loading order.
+See PARQUET-2142 for details.
 
 
 ### Help
@@ -96,11 +101,27 @@ Usage: parquet [options] [command] [command options]
         Print the first N records from a file
     head
         Print the first N records from a file
+    column-index
+        Prints the column and offset indexes of a Parquet file
+    column-size
+        Print the column sizes of a parquet file
+    prune
+        Prune column(s) in a Parquet file and save it to a new file. The columns left are not changed.
+    trans-compression
+        Translate the compression from one to another (It doesn't support bloom filter feature yet).
+    masking
+        Replace columns with masked values and write to a new Parquet file
+    footer
+        Print the Parquet file footer in json format
+    bloom-filter
+        Check bloom filters for a Parquet column
+    scan
+        Scan all records from a file
 
   Examples:
 
     # print information for create
-    parquet help create
+    parquet help meta
 
   See 'parquet help <command>' for more information on a specific command.
 ```

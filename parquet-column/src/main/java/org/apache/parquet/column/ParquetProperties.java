@@ -19,6 +19,7 @@
 package org.apache.parquet.column;
 
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
 import org.apache.parquet.Preconditions;
@@ -57,6 +58,7 @@ public class ParquetProperties {
   public static final int DEFAULT_PAGE_ROW_COUNT_LIMIT = 20_000;
   public static final int DEFAULT_MAX_BLOOM_FILTER_BYTES = 1024 * 1024;
   public static final boolean DEFAULT_BLOOM_FILTER_ENABLED = false;
+  public static final double DEFAULT_BLOOM_FILTER_FPP = 0.01;
 
   public static final boolean DEFAULT_PAGE_WRITE_CHECKSUM_ENABLED = true;
 
@@ -100,6 +102,7 @@ public class ParquetProperties {
 
   // The expected NDV (number of distinct values) for each columns
   private final ColumnProperty<Long> bloomFilterNDVs;
+  private final ColumnProperty<Double> bloomFilterFPPs;
   private final int maxBloomFilterBytes;
   private final ColumnProperty<Boolean> bloomFilterEnabled;
   private final int pageRowCountLimit;
@@ -122,6 +125,7 @@ public class ParquetProperties {
     this.columnIndexTruncateLength = builder.columnIndexTruncateLength;
     this.statisticsTruncateLength = builder.statisticsTruncateLength;
     this.bloomFilterNDVs = builder.bloomFilterNDVs.build();
+    this.bloomFilterFPPs = builder.bloomFilterFPPs.build();
     this.bloomFilterEnabled = builder.bloomFilterEnabled.build();
     this.maxBloomFilterBytes = builder.maxBloomFilterBytes;
     this.pageRowCountLimit = builder.pageRowCountLimit;
@@ -258,6 +262,11 @@ public class ParquetProperties {
     return ndv == null ? OptionalLong.empty() : OptionalLong.of(ndv);
   }
 
+  public OptionalDouble getBloomFilterFPP(ColumnDescriptor column) {
+    Double fpp = bloomFilterFPPs.getValue(column);
+    return fpp == null ? OptionalDouble.empty() : OptionalDouble.of(fpp);
+  }
+
   public boolean isBloomFilterEnabled(ColumnDescriptor column) {
     return bloomFilterEnabled.getValue(column);
   }
@@ -288,6 +297,7 @@ public class ParquetProperties {
         + "Bloom filter enabled: " + bloomFilterEnabled + '\n'
         + "Max Bloom filter size for a column is " + getMaxBloomFilterBytes() + '\n'
         + "Bloom filter expected number of distinct values are: " + bloomFilterNDVs + '\n'
+        + "Bloom filter false positive probabilities are: " + bloomFilterFPPs + '\n'
         + "Page row count limit to " + getPageRowCountLimit() + '\n'
         + "Writing page checksums is: " + (getPageWriteChecksumEnabled() ? "on" : "off");
   }
@@ -305,6 +315,7 @@ public class ParquetProperties {
     private int columnIndexTruncateLength = DEFAULT_COLUMN_INDEX_TRUNCATE_LENGTH;
     private int statisticsTruncateLength = DEFAULT_STATISTICS_TRUNCATE_LENGTH;
     private final ColumnProperty.Builder<Long> bloomFilterNDVs;
+    private final ColumnProperty.Builder<Double> bloomFilterFPPs;
     private int maxBloomFilterBytes = DEFAULT_MAX_BLOOM_FILTER_BYTES;
     private final ColumnProperty.Builder<Boolean> bloomFilterEnabled;
     private int pageRowCountLimit = DEFAULT_PAGE_ROW_COUNT_LIMIT;
@@ -315,6 +326,7 @@ public class ParquetProperties {
       enableDict = ColumnProperty.<Boolean>builder().withDefaultValue(DEFAULT_IS_DICTIONARY_ENABLED);
       bloomFilterEnabled = ColumnProperty.<Boolean>builder().withDefaultValue(DEFAULT_BLOOM_FILTER_ENABLED);
       bloomFilterNDVs = ColumnProperty.<Long>builder().withDefaultValue(null);
+      bloomFilterFPPs = ColumnProperty.<Double>builder().withDefaultValue(DEFAULT_BLOOM_FILTER_FPP);
     }
 
     private Builder(ParquetProperties toCopy) {
@@ -330,6 +342,7 @@ public class ParquetProperties {
       this.pageRowCountLimit = toCopy.pageRowCountLimit;
       this.pageWriteChecksumEnabled = toCopy.pageWriteChecksumEnabled;
       this.bloomFilterNDVs = ColumnProperty.<Long>builder(toCopy.bloomFilterNDVs);
+      this.bloomFilterFPPs = ColumnProperty.<Double>builder(toCopy.bloomFilterFPPs);
       this.bloomFilterEnabled = ColumnProperty.<Boolean>builder(toCopy.bloomFilterEnabled);
       this.maxBloomFilterBytes = toCopy.maxBloomFilterBytes;
       this.enableByteStreamSplit = toCopy.enableByteStreamSplit;
@@ -468,6 +481,12 @@ public class ParquetProperties {
       this.bloomFilterNDVs.withValue(columnPath, ndv);
       // Setting an NDV for a column implies writing a bloom filter
       this.bloomFilterEnabled.withValue(columnPath, true);
+      return this;
+    }
+
+    public Builder withBloomFilterFPP(String columnPath, double fpp) {
+      Preconditions.checkArgument(fpp > 0.0 && fpp < 1.0, "Invalid FPP for column \"%s\": %d", columnPath, fpp);
+      this.bloomFilterFPPs.withValue(columnPath, fpp);
       return this;
     }
 

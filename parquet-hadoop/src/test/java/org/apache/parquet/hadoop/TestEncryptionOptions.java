@@ -93,6 +93,8 @@ import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.INT32;
  *
  *  UNIFORM_ENCRYPTION:             Encrypt all columns and the footer with the same key.
  *                                  (uniform encryption)
+ *  UNIFORM_ENCRYPTION_PLAINTEXT_FOOTER: Encrypt all columns with the same key.
+ *                                  Do not encrypt footer.
  *  ENCRYPT_COLUMNS_AND_FOOTER:     Encrypt six columns and the footer, with different
  *                                  keys.
  *  ENCRYPT_COLUMNS_PLAINTEXT_FOOTER: Encrypt six columns, with different keys.
@@ -240,6 +242,17 @@ public class TestEncryptionOptions {
           .withEncryptedColumns(columnPropertiesMap)
           .withAlgorithm(ParquetCipher.AES_GCM_CTR_V1)
           .build();
+      }
+    },
+    UNIFORM_ENCRYPTION_PLAINTEXT_FOOTER {
+      /**
+       * Encryption configuration 7: Encrypt all columns with the same key.
+       * Don't encrypt footer.
+       */
+      public FileEncryptionProperties getEncryptionProperties() {
+        return FileEncryptionProperties.builder(FOOTER_ENCRYPTION_KEY)
+          .withPlaintextFooter()
+          .withFooterKeyMetadata(footerKeyMetadata).build();
       }
     },
     NO_ENCRYPTION {
@@ -455,6 +468,9 @@ public class TestEncryptionOptions {
       if (readOnlyEncrypted && (EncryptionConfiguration.NO_ENCRYPTION == encryptionConfiguration)) {
         continue;
       }
+      if (EncryptionConfiguration.UNIFORM_ENCRYPTION_PLAINTEXT_FOOTER == encryptionConfiguration) {
+        continue;
+      }
       String fileName = getFileName(encryptionConfiguration);
       Path file = new Path(rootPath, fileName);
       if (!fs.exists(file)) {
@@ -479,6 +495,9 @@ public class TestEncryptionOptions {
       EncryptionConfiguration[] encryptionConfigurations = EncryptionConfiguration.values();
       for (EncryptionConfiguration encryptionConfiguration : encryptionConfigurations) {
         if (readOnlyEncrypted && (EncryptionConfiguration.NO_ENCRYPTION == encryptionConfiguration)) {
+          continue;
+        }
+        if (EncryptionConfiguration.UNIFORM_ENCRYPTION_PLAINTEXT_FOOTER == encryptionConfiguration) {
           continue;
         }
         Path file = new Path(root, getFileName(encryptionConfiguration));

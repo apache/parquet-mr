@@ -19,8 +19,10 @@
 
 package org.apache.parquet.hadoop.util;
 
+import org.apache.hadoop.fs.ByteBufferReadable;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.parquet.hadoop.TestUtils;
+import org.apache.parquet.io.SeekableInputStream;
 import org.junit.Assert;
 import org.junit.Test;
 import java.io.EOFException;
@@ -28,6 +30,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.Callable;
 
+import static org.apache.parquet.hadoop.util.HadoopStreams.wrap;
 import static org.apache.parquet.hadoop.util.MockHadoopInputStream.TEST_ARRAY;
 
 public class TestHadoop2ByteBufferReads {
@@ -395,5 +398,49 @@ public class TestHadoop2ByteBufferReads {
     readBuffer.reset();
     Assert.assertEquals("Buffer contents should match",
         ByteBuffer.wrap(TEST_ARRAY, 0, 7), readBuffer);
+  }
+
+  @Test
+  public void testCreateStreamNoByteBufferReadable() {
+    final SeekableInputStream s = wrap(new FSDataInputStream(
+      new MockHadoopInputStream()));
+    Assert.assertTrue("Wrong wrapper: " + s,
+      s instanceof H1SeekableInputStream);
+  }
+
+  @Test
+  public void testDoubleWrapNoByteBufferReadable() {
+    final SeekableInputStream s = wrap(new FSDataInputStream(
+      new FSDataInputStream(new MockHadoopInputStream())));
+    Assert.assertTrue("Wrong wrapper: " + s,
+      s instanceof H1SeekableInputStream);
+  }
+
+  @Test
+  public void testCreateStreamWithByteBufferReadable() {
+    final SeekableInputStream s = wrap(new FSDataInputStream(
+      new MockByteBufferInputStream()));
+    Assert.assertTrue("Wrong wrapper: " + s,
+      s instanceof H2SeekableInputStream);
+  }
+
+  @Test
+  public void testDoubleWrapByteBufferReadable() {
+    final SeekableInputStream s = wrap(new FSDataInputStream(
+      new FSDataInputStream(new MockByteBufferInputStream())));
+    Assert.assertTrue("Wrong wrapper: " + s,
+      s instanceof H2SeekableInputStream);
+  }
+
+  /**
+   * Input stream which claims to implement ByteBufferReadable.
+   */
+  private static final class MockByteBufferInputStream
+    extends MockHadoopInputStream implements ByteBufferReadable {
+
+    @Override
+    public int read(final ByteBuffer buf) {
+      return 0;
+    }
   }
 }

@@ -22,6 +22,7 @@ package org.apache.parquet.column.values.bloomfilter;
 import org.apache.parquet.Preconditions;
 import org.apache.parquet.io.api.Binary;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -393,5 +394,31 @@ public class BlockSplitBloomFilter implements BloomFilter {
   @Override
   public long hash(Binary value) {
     return hashFunction.hashBytes(value.getBytes());
+  }
+
+  @Override
+  public boolean canMergeFrom(BloomFilter otherBloomFilter) {
+    return otherBloomFilter != null
+      && getBitsetSize() == otherBloomFilter.getBitsetSize()
+      && getAlgorithm() == otherBloomFilter.getAlgorithm()
+      && getHashStrategy() == otherBloomFilter.getHashStrategy();
+  }
+
+  @Override
+  public void merge(BloomFilter otherBloomFilter) throws IOException {
+    Preconditions.checkArgument(otherBloomFilter != null,
+      "The BloomFilter to merge shouldn't be null");
+    Preconditions.checkArgument(canMergeFrom(otherBloomFilter),
+      "BloomFilters must have the same size of bitset, hashStrategy and algorithm." +
+        "This BloomFilter's size of bitset is %s , hashStrategy is %s, algorithm is %s ," +
+        "but the other BloomFilter's size of bitset is %s , hashStrategy is %s, algorithm is %s.",
+      getBitsetSize(), getHashStrategy(), getAlgorithm(),
+      otherBloomFilter.getBitsetSize(), otherBloomFilter.getHashStrategy(), otherBloomFilter.getAlgorithm());
+    ByteArrayOutputStream otherOutputStream = new ByteArrayOutputStream();
+    otherBloomFilter.writeTo(otherOutputStream);
+    byte[] otherBits = otherOutputStream.toByteArray();
+    for (int i = 0; i < otherBits.length; i++) {
+      bitset[i] |= otherBits[i];
+    }
   }
 }

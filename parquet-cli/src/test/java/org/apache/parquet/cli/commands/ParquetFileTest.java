@@ -23,12 +23,17 @@ import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
+import org.apache.parquet.format.DateType;
+import org.apache.parquet.format.LogicalType;
+import org.apache.parquet.format.LogicalTypes;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.GroupWriteSupport;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.io.api.Binary;
+import org.apache.parquet.schema.LogicalTypeAnnotation;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.Types;
 import org.junit.Before;
 
 import java.io.File;
@@ -59,15 +64,17 @@ public abstract class ParquetFileTest extends FileTest {
   }
 
   private static MessageType createSchema() {
-    return new MessageType("schema",
-      new PrimitiveType(REQUIRED, PrimitiveTypeName.INT32, INT32_FIELD),
-      new PrimitiveType(REQUIRED, PrimitiveTypeName.INT64, INT64_FIELD),
-      new PrimitiveType(REQUIRED, PrimitiveTypeName.FLOAT, FLOAT_FIELD),
-      new PrimitiveType(REQUIRED, PrimitiveTypeName.DOUBLE, DOUBLE_FIELD),
-      new PrimitiveType(REQUIRED, PrimitiveTypeName.BINARY, BINARY_FIELD),
-      new PrimitiveType(REQUIRED, PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY,
-        12, FIXED_LEN_BYTE_ARRAY_FIELD)
-    );
+    return Types.buildMessage()
+      .required(PrimitiveTypeName.INT32).named(INT32_FIELD)
+      .required(PrimitiveTypeName.INT64).named(INT64_FIELD)
+      .required(PrimitiveTypeName.FLOAT).named(FLOAT_FIELD)
+      .required(PrimitiveTypeName.DOUBLE).named(DOUBLE_FIELD)
+      .required(PrimitiveTypeName.BINARY).named(BINARY_FIELD)
+      .required(PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY).length(12)
+        .named(FIXED_LEN_BYTE_ARRAY_FIELD)
+      .required(PrimitiveTypeName.INT32).as(LogicalTypeAnnotation.dateType())
+        .named(DATE_FIELD)
+      .named("schema");
   }
 
   private void createTestParquetFile() throws IOException {
@@ -102,7 +109,8 @@ public abstract class ParquetFileTest extends FileTest {
          .append(DOUBLE_FIELD, 2.0d + i)
          .append(BINARY_FIELD, Binary.fromString(COLORS[i % COLORS.length]))
          .append(FIXED_LEN_BYTE_ARRAY_FIELD,
-           Binary.fromConstantByteArray(bytes)));
+           Binary.fromConstantByteArray(bytes))
+         .append(DATE_FIELD, i));
       }
     }
   }

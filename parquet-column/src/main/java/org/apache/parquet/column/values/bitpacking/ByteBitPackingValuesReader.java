@@ -38,31 +38,39 @@ public class ByteBitPackingValuesReader extends ValuesReader {
   private final int[] decoded = new int[VALUES_AT_A_TIME];
   private int decodedPosition = VALUES_AT_A_TIME - 1;
   private ByteBufferInputStream in;
+  private final byte[] tempEncode;
 
   public ByteBitPackingValuesReader(int bound, Packer packer) {
     this.bitWidth = BytesUtils.getWidthFromMaxInt(bound);
     this.packer = packer.newBytePacker(bitWidth);
+    // Create and retain byte array to avoid object creation in the critical path
+    this.tempEncode = new byte[this.bitWidth];
+  }
+
+  private void readMore() {
+    try {
+      int avail = in.available();
+      if (avail < bitWidth) {
+        in.read(tempEncode, 0, avail);
+        // Clear the portion of the array we didn't read into
+        for (int i=avail; i<bitWidth; i++) tempEncode[i] = 0;
+      } else {
+        in.read(tempEncode, 0, bitWidth);
+      }
+
+      // The "deprecated" unpacker is faster than using the one that takes ByteBuffer
+      packer.unpack8Values(tempEncode, 0, decoded, 0);
+    } catch (IOException e) {
+      throw new ParquetDecodingException("Failed to read packed values", e);
+    }
+    decodedPosition = 0;
   }
 
   @Override
   public int readInteger() {
     ++ decodedPosition;
     if (decodedPosition == decoded.length) {
-      try {
-        if (in.available() < bitWidth) {
-          // unpack8Values needs at least bitWidth bytes to read from,
-          // We have to fill in 0 byte at the end of encoded bytes.
-          byte[] tempEncode = new byte[bitWidth];
-          in.read(tempEncode, 0, in.available());
-          packer.unpack8Values(tempEncode, 0, decoded, 0);
-        } else {
-          ByteBuffer encoded = in.slice(bitWidth);
-          packer.unpack8Values(encoded, encoded.position(), decoded, 0);
-        }
-      } catch (IOException e) {
-        throw new ParquetDecodingException("Failed to read packed values", e);
-      }
-      decodedPosition = 0;
+      readMore();
     }
     return decoded[decodedPosition];
   }

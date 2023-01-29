@@ -18,6 +18,7 @@
  */
 package org.apache.parquet.column.values.bloomfilter;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.HashSet;
@@ -27,10 +28,12 @@ import java.util.Set;
 import net.openhft.hashing.LongHashFunction;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.parquet.io.api.Binary;
+import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -179,6 +182,43 @@ public class TestBlockSplitBloomFilter {
     numBits = -8 * ndv / Math.log(1 - Math.pow(fpp, 1.0 / 8));
     bytes = (int)numBits / 8;
     assertTrue(bytes < 5 * 1024 * 1024);
+  }
+
+  @Test
+  public void testMergeBloomFilter() throws IOException {
+    int numBytes = BlockSplitBloomFilter.optimalNumOfBits(1024 * 5, 0.01) / 8;
+    BloomFilter otherBloomFilter = new BlockSplitBloomFilter(numBytes);
+    BloomFilter mergedBloomFilter = new BlockSplitBloomFilter(numBytes);
+    for (int i = 0; i < 1024; i++) {
+      mergedBloomFilter.insertHash(mergedBloomFilter.hash(i));
+    }
+    for (int i = 1024; i < 2048; i++) {
+      otherBloomFilter.insertHash(otherBloomFilter.hash(i));
+      // Before merging BloomFilter, `mergedBloomFilter` doesn't have any value in `otherBloomFilter`
+      assertFalse(mergedBloomFilter.findHash(mergedBloomFilter.hash(i)));
+    }
+    mergedBloomFilter.merge(otherBloomFilter);
+    // After merging BloomFilter, `mergedBloomFilter` should have all values in `otherBloomFilter`
+    for (int i = 0; i < 2048; i++) {
+      assertTrue(mergedBloomFilter.findHash(mergedBloomFilter.hash(i)));
+    }
+    for (int i = 2048; i < 3096; i++) {
+      assertFalse(otherBloomFilter.findHash(otherBloomFilter.hash(i)));
+      assertFalse(mergedBloomFilter.findHash(mergedBloomFilter.hash(i)));
+    }
+  }
+
+  @Test
+  public void testMergeBloomFilterFailed() throws IOException {
+    int numBytes = BlockSplitBloomFilter.optimalNumOfBits(1024 * 5, 0.01) / 8;
+    BloomFilter mergedBloomFilter = new BlockSplitBloomFilter(numBytes);
+    BloomFilter otherBloomFilter = new BlockSplitBloomFilter(numBytes * 1024);
+    try {
+      mergedBloomFilter.merge(otherBloomFilter);
+      Assert.fail();
+    } catch (IllegalArgumentException e) {
+      // expected, BloomFilters should have the same size of bitsets
+    }
   }
 
   /**

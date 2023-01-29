@@ -369,7 +369,13 @@ public class ParquetFileWriter {
       for (Map.Entry<ColumnPath, ColumnEncryptionProperties> entry : columnEncryptionProperties.entrySet()) {
         String[] path = entry.getKey().toArray();
         if (!schema.containsPath(path)) {
-          throw new ParquetCryptoRuntimeException("Encrypted column " + Arrays.toString(path) + " not in file schema");
+          StringBuilder columnList = new StringBuilder();
+          columnList.append("[");
+          for (String[] columnPath : schema.getPaths()) {
+            columnList.append(ColumnPath.get(columnPath).toDotString() + "], [");
+          }
+          throw new ParquetCryptoRuntimeException("Encrypted column [" + entry.getKey().toDotString() +
+            "] not in file schema column list: " + columnList.substring(0, columnList.length() - 3));
         }
       }
     }
@@ -1193,7 +1199,7 @@ public class ParquetFileWriter {
     serializeBloomFilters(bloomFilters, blocks, out, fileEncryptor);
     LOG.debug("{}: end", out.getPos());
     this.footer = new ParquetMetadata(new FileMetaData(schema, extraMetaData, Version.FULL_VERSION), blocks);
-    serializeFooter(footer, out, fileEncryptor);
+    serializeFooter(footer, out, fileEncryptor, metadataConverter);
     out.close();
   }
 
@@ -1322,9 +1328,7 @@ public class ParquetFileWriter {
   }
 
   private static void serializeFooter(ParquetMetadata footer, PositionOutputStream out,
-      InternalFileEncryptor fileEncryptor) throws IOException {
-
-    ParquetMetadataConverter metadataConverter = new ParquetMetadataConverter();
+      InternalFileEncryptor fileEncryptor, ParquetMetadataConverter metadataConverter) throws IOException {
 
     // Unencrypted file
     if (null == fileEncryptor) {
@@ -1499,7 +1503,7 @@ public class ParquetFileWriter {
       throws IOException {
     PositionOutputStream metadata = HadoopStreams.wrap(fs.create(outputPath));
     metadata.write(MAGIC);
-    serializeFooter(metadataFooter, metadata, null);
+    serializeFooter(metadataFooter, metadata, null, new ParquetMetadataConverter());
     metadata.close();
   }
 
