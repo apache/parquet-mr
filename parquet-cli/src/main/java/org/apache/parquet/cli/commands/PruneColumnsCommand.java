@@ -30,8 +30,9 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.util.List;
 
-@Parameters(commandDescription="Prune column(s) in a Parquet file and save it to a new file. " +
-  "The columns left are not changed.")
+@Parameters(commandDescription="(Deprecated: will be removed in 2.0.0, use rewrite command instead) " +
+        "Prune column(s) in a Parquet file and save it to a new file. " +
+        "The columns left are not changed.")
 public class PruneColumnsCommand extends BaseCommand {
 
   public PruneColumnsCommand(Logger console) {
@@ -52,7 +53,7 @@ public class PruneColumnsCommand extends BaseCommand {
 
   @Parameter(
     names = {"-c", "--columns"},
-    description = "<columns to be replaced with masked value>",
+    description = "<columns to be pruned>",
     required = true)
   List<String> cols;
 

@@ -548,7 +548,7 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
       @Override
       public Converter getConverter(int fieldIndex) {
         Preconditions.checkArgument(
-            fieldIndex == 0, "Illegal field index: " + fieldIndex);
+            fieldIndex == 0, "Illegal field index: %s", fieldIndex);
         return elementConverter;
       }
 
@@ -592,7 +592,7 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
       this.avroSchema = avroSchema;
 
       Preconditions.checkArgument(arrayClass.isArray(),
-          "Cannot convert non-array: " + arrayClass.getName());
+          "Cannot convert non-array: %s", arrayClass.getName());
       this.elementClass = arrayClass.getComponentType();
 
       ParentValueContainer setter = createSetterAndContainer();
@@ -817,7 +817,7 @@ class AvroRecordConverter<T> extends AvroConverters.AvroGroupConverter {
       @Override
       public Converter getConverter(int fieldIndex) {
         Preconditions.checkArgument(
-            fieldIndex == 0, "Illegal field index: " + fieldIndex);
+            fieldIndex == 0, "Illegal field index: %s", fieldIndex);
         return elementConverter;
       }
 

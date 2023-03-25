@@ -106,17 +106,19 @@ Usage: parquet [options] [command] [command options]
     column-size
         Print the column sizes of a parquet file
     prune
-        Prune column(s) in a Parquet file and save it to a new file. The columns left are not changed.
+        (Deprecated: will be removed in 2.0.0, use rewrite command instead) Prune column(s) in a Parquet file and save it to a new file. The columns left are not changed.
     trans-compression
-        Translate the compression from one to another (It doesn't support bloom filter feature yet).
+        (Deprecated: will be removed in 2.0.0, use rewrite command instead) Translate the compression from one to another (It doesn't support bloom filter feature yet).
     masking
-        Replace columns with masked values and write to a new Parquet file
+        (Deprecated: will be removed in 2.0.0, use rewrite command instead) Replace columns with masked values and write to a new Parquet file
     footer
         Print the Parquet file footer in json format
     bloom-filter
         Check bloom filters for a Parquet column
     scan
         Scan all records from a file
+    rewrite
+        Rewrite one or more Parquet files to a new Parquet file
 
   Examples:
 

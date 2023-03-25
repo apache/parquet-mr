@@ -177,7 +177,11 @@
         <exclusions>
           <exclusion>
             <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
+            <artifactId>*</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>ch.qos.reload4j</groupId>
+            <artifactId>*</artifactId>
           </exclusion>
         </exclusions>
       </dependency>
@@ -188,7 +192,11 @@
         <exclusions>
           <exclusion>
             <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
+            <artifactId>*</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>ch.qos.reload4j</groupId>
+            <artifactId>*</artifactId>
           </exclusion>
         </exclusions>
       </dependency>
@@ -199,7 +207,11 @@
         <exclusions>
           <exclusion>
             <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
+            <artifactId>*</artifactId>
+          </exclusion>
+          <exclusion>
+            <groupId>ch.qos.reload4j</groupId>
+            <artifactId>*</artifactId>
           </exclusion>
         </exclusions>
       </dependency>
@@ -285,6 +297,7 @@
                 <bannedDependencies>
                   <excludes>
                     <exclude>org.slf4j:slf4j-log4j12:*:*:compile</exclude>
+                    <exclude>org.slf4j:slf4j-reload4j:*:*:compile</exclude>
                   </excludes>
                 </bannedDependencies>
               </rules>
@@ -410,6 +423,9 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <argLine>${extraJavaTestArgs}</argLine>
+        </configuration>
         <executions>
           <execution>
             <goals>
@@ -509,6 +525,7 @@
             <oldVersionPattern>${previous.version}</oldVersionPattern>
             <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
             <onlyModified>true</onlyModified>
+            <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
             <overrideCompatibilityChangeParameters>
               <!-- Adding a new method with default implementation to an interface should be a compatible change.
                 That's why they invented it. -->
@@ -671,6 +688,14 @@
           </plugin>
         </plugins>
       </build>
+    </profile>
+
+    <profile>
+      <id>vector-plugins</id>
+      <modules>
+        <module>parquet-plugins/parquet-encoding-vector</module>
+        <module>parquet-plugins/parquet-plugins-benchmarks</module>
+      </modules>
     </profile>
   </profiles>
 </project>

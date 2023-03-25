@@ -477,7 +477,7 @@ public class ParquetProperties {
      * @return this builder for method chaining
      */
     public Builder withBloomFilterNDV(String columnPath, long ndv) {
-      Preconditions.checkArgument(ndv > 0, "Invalid NDV for column \"%s\": %d", columnPath, ndv);
+      Preconditions.checkArgument(ndv > 0, "Invalid NDV for column \"%s\": %s", columnPath, ndv);
       this.bloomFilterNDVs.withValue(columnPath, ndv);
       // Setting an NDV for a column implies writing a bloom filter
       this.bloomFilterEnabled.withValue(columnPath, true);
@@ -485,7 +485,7 @@ public class ParquetProperties {
     }
 
     public Builder withBloomFilterFPP(String columnPath, double fpp) {
-      Preconditions.checkArgument(fpp > 0.0 && fpp < 1.0, "Invalid FPP for column \"%s\": %d", columnPath, fpp);
+      Preconditions.checkArgument(fpp > 0.0 && fpp < 1.0, "Invalid FPP for column \"%s\": %s", columnPath, fpp);
       this.bloomFilterFPPs.withValue(columnPath, fpp);
       return this;
     }
@@ -520,7 +520,7 @@ public class ParquetProperties {
     }
 
     public Builder withPageRowCountLimit(int rowCount) {
-      Preconditions.checkArgument(rowCount > 0, "Invalid row count limit for pages: " + rowCount);
+      Preconditions.checkArgument(rowCount > 0, "Invalid row count limit for pages: %s", rowCount);
       pageRowCountLimit = rowCount;
       return this;
     }

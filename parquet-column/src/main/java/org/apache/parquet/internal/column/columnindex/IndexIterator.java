@@ -29,14 +29,14 @@ import org.apache.parquet.internal.column.columnindex.ColumnIndexBuilder.ColumnI
 /**
  * Iterator implementation for page indexes.
  */
-class IndexIterator implements PrimitiveIterator.OfInt {
+public class IndexIterator implements PrimitiveIterator.OfInt {
   public static final PrimitiveIterator.OfInt EMPTY = IntStream.empty().iterator();
   private int index;
   private final int endIndex;
   private final IntPredicate filter;
   private final IntUnaryOperator translator;
 
-  static PrimitiveIterator.OfInt all(int pageCount) {
+  public static PrimitiveIterator.OfInt all(int pageCount) {
     return new IndexIterator(0, pageCount, i -> true, i -> i);
   }
 
@@ -44,7 +44,7 @@ class IndexIterator implements PrimitiveIterator.OfInt {
     return new IndexIterator(0, comparator.arrayLength(), i -> true, comparator::translate);
   }
 
-  static PrimitiveIterator.OfInt filter(int pageCount, IntPredicate filter) {
+  public static PrimitiveIterator.OfInt filter(int pageCount, IntPredicate filter) {
     return new IndexIterator(0, pageCount, filter, i -> i);
   }
 

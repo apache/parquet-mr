@@ -33,6 +33,7 @@ Below is more information about each committer (in alphabetical order). If this 
 | Chris Mattmann         | mattmann        | @chrismattmann      |                |
 | Daniel C. Weeks        | dweeks          | @danielcweeks       |                | 
 | Dmitriy Ryaboy         | dvryaboy        | @dvryaboy           |                |
+| Gang Wu                | gangwu          | @wgtmac             |                |
 | Jake Farrell           | jfarrell        |                     |                |
 | Jonathan Coveney       | jcoveney        | @jcoveney           |                |
 | Julien Le Dem          | julien          | @julienledem        | julienledem    |

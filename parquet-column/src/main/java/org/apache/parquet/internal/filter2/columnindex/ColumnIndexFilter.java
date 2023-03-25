@@ -191,12 +191,22 @@ public class ColumnIndexFilter implements Visitor<RowRanges> {
 
   @Override
   public RowRanges visit(And and) {
-    return RowRanges.intersection(and.getLeft().accept(this), and.getRight().accept(this));
+    RowRanges leftResult = and.getLeft().accept(this);
+    if (leftResult.getRanges().size() == 0) {
+      return leftResult;
+    }
+
+    return RowRanges.intersection(leftResult, and.getRight().accept(this));
   }
 
   @Override
   public RowRanges visit(Or or) {
-    return RowRanges.union(or.getLeft().accept(this), or.getRight().accept(this));
+    RowRanges leftResult = or.getLeft().accept(this);
+    if (leftResult.getRanges().size() == 1 && leftResult.rowCount() == rowCount) {
+      return leftResult;
+    }
+
+    return RowRanges.union(leftResult, or.getRight().accept(this));
   }
 
   @Override

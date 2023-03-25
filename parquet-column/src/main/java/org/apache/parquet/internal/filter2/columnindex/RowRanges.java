@@ -92,7 +92,7 @@ public class RowRanges {
     }
   }
 
-  static final RowRanges EMPTY = new RowRanges(Collections.emptyList());
+  public static final RowRanges EMPTY = new RowRanges(Collections.emptyList());
 
   private final List<Range> ranges;
 
@@ -115,7 +115,7 @@ public class RowRanges {
    * @param rowCount a single row count
    * @return an immutable RowRanges
    */
-  static RowRanges createSingle(long rowCount) {
+  public static RowRanges createSingle(long rowCount) {
     return new RowRanges(new Range(0L, rowCount - 1L));
   }
 
@@ -137,7 +137,7 @@ public class RowRanges {
    * @param offsetIndex offsetIndex
    * @return a mutable RowRanges
    */
-  static RowRanges create(long rowCount, PrimitiveIterator.OfInt pageIndexes, OffsetIndex offsetIndex) {
+  public static RowRanges create(long rowCount, PrimitiveIterator.OfInt pageIndexes, OffsetIndex offsetIndex) {
     RowRanges ranges = new RowRanges();
     while (pageIndexes.hasNext()) {
       int pageIndex = pageIndexes.nextInt();
@@ -146,18 +146,22 @@ public class RowRanges {
     return ranges;
   }
 
-  /*
+  /**
    * Calculates the union of the two specified RowRanges object. The union of two range is calculated if there are no
    * elements between them. Otherwise, the two disjunct ranges are stored separately.
+   * <pre>
    * For example:
-   * [113, 241] ∪ [221, 340] = [113, 330]
+   * [113, 241] ∪ [221, 340] = [113, 340]
    * [113, 230] ∪ [231, 340] = [113, 340]
    * while
    * [113, 230] ∪ [232, 340] = [113, 230], [232, 340]
-   *
+   * </pre>
    * The result RowRanges object will contain all the row indexes that were contained in one of the specified objects.
+   * @param left left RowRanges
+   * @param right right RowRanges
+   * @return a mutable RowRanges contains all the row indexes that were contained in one of the specified objects
    */
-  static RowRanges union(RowRanges left, RowRanges right) {
+  public static RowRanges union(RowRanges left, RowRanges right) {
     RowRanges result = new RowRanges();
     Iterator<Range> it1 = left.ranges.iterator();
     Iterator<Range> it2 = right.ranges.iterator();
@@ -186,17 +190,20 @@ public class RowRanges {
     return result;
   }
 
-  /*
+  /**
    * Calculates the intersection of the two specified RowRanges object. Two ranges intersect if they have common
    * elements otherwise the result is empty.
+   * <pre>
    * For example:
    * [113, 241] ∩ [221, 340] = [221, 241]
    * while
-   * [113, 230] ∩ [231, 340] = <EMPTY>
-   *
-   * The result RowRanges object will contain all the row indexes there were contained in both of the specified objects
+   * [113, 230] ∩ [231, 340] = &lt;EMPTY&gt;
+   * </pre>
+   * @param left left RowRanges
+   * @param right right RowRanges
+   * @return a mutable RowRanges contains all the row indexes that were contained in both of the specified objects
    */
-  static RowRanges intersection(RowRanges left, RowRanges right) {
+  public static RowRanges intersection(RowRanges left, RowRanges right) {
     RowRanges result = new RowRanges();
 
     int rightIndex = 0;

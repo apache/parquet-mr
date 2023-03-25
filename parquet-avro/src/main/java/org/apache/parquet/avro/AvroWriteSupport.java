@@ -425,7 +425,7 @@ public class AvroWriteSupport<T> extends WriteSupport<T> {
       } else {
         Class<?> arrayClass = value.getClass();
         Preconditions.checkArgument(arrayClass.isArray(),
-            "Cannot write unless collection or array: " + arrayClass.getName());
+            "Cannot write unless collection or array: %s", arrayClass.getName());
         writeJavaArray(schema, avroSchema, arrayClass, value);
       }
       recordConsumer.endGroup();
@@ -443,7 +443,7 @@ public class AvroWriteSupport<T> extends WriteSupport<T> {
       switch (avroSchema.getElementType().getType()) {
         case BOOLEAN:
           Preconditions.checkArgument(elementClass == boolean.class,
-              "Cannot write as boolean array: " + arrayClass.getName());
+              "Cannot write as boolean array: %s", arrayClass.getName());
           writeBooleanArray((boolean[]) value);
           break;
         case INT:
@@ -462,17 +462,17 @@ public class AvroWriteSupport<T> extends WriteSupport<T> {
           break;
         case LONG:
           Preconditions.checkArgument(elementClass == long.class,
-              "Cannot write as long array: " + arrayClass.getName());
+              "Cannot write as long array: %s", arrayClass.getName());
           writeLongArray((long[]) value);
           break;
         case FLOAT:
           Preconditions.checkArgument(elementClass == float.class,
-              "Cannot write as float array: " + arrayClass.getName());
+              "Cannot write as float array: %s", arrayClass.getName());
           writeFloatArray((float[]) value);
           break;
         case DOUBLE:
           Preconditions.checkArgument(elementClass == double.class,
-              "Cannot write as double array: " + arrayClass.getName());
+              "Cannot write as double array: %s", arrayClass.getName());
           writeDoubleArray((double[]) value);
           break;
         default:

@@ -884,7 +884,8 @@ public class ParquetFileWriter {
       // write bloom filter if one of data pages is not dictionary encoded
       boolean isWriteBloomFilter = false;
       for (Encoding encoding : dataEncodings) {
-        if (encoding != Encoding.RLE_DICTIONARY) {
+        // dictionary encoding: `PLAIN_DICTIONARY` is used in parquet v1, `RLE_DICTIONARY` is used in parquet v2
+        if (encoding != Encoding.PLAIN_DICTIONARY && encoding != Encoding.RLE_DICTIONARY) {
           isWriteBloomFilter = true;
           break;
         }
@@ -1471,7 +1472,7 @@ public class ParquetFileWriter {
   @Deprecated
   public static void writeMetadataFile(Configuration configuration, Path outputPath, List<Footer> footers, JobSummaryLevel level) throws IOException {
     Preconditions.checkArgument(level == JobSummaryLevel.ALL || level == JobSummaryLevel.COMMON_ONLY,
-        "Unsupported level: " + level);
+        "Unsupported level: %s", level);
 
     FileSystem fs = outputPath.getFileSystem(configuration);
     outputPath = outputPath.makeQualified(fs);

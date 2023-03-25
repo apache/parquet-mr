@@ -545,11 +545,11 @@ public final class PrimitiveType extends Type {
   private ColumnOrder requireValidColumnOrder(ColumnOrder columnOrder) {
     if (primitive == PrimitiveTypeName.INT96) {
       Preconditions.checkArgument(columnOrder.getColumnOrderName() == ColumnOrderName.UNDEFINED,
-          "The column order {} is not supported by INT96", columnOrder);
+          "The column order %s is not supported by INT96", columnOrder);
     }
     if (getLogicalTypeAnnotation() != null) {
       Preconditions.checkArgument(getLogicalTypeAnnotation().isValidColumnOrder(columnOrder),
-        "The column order {} is not supported by {} ({})", columnOrder, primitive, getLogicalTypeAnnotation());
+        "The column order %s is not supported by %s (%s)", columnOrder, primitive, getLogicalTypeAnnotation());
     }
     return columnOrder;
   }

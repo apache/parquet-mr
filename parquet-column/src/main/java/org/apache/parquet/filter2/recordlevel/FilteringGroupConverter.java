@@ -90,7 +90,7 @@ public class FilteringGroupConverter extends GroupConverter {
 
   private PrimitiveColumnIO getColumnIO(List<Integer> indexFieldPath) {
     PrimitiveColumnIO found = columnIOsByIndexFieldPath.get(indexFieldPath);
-    checkArgument(found != null, "Did not find PrimitiveColumnIO for index field path" + indexFieldPath);
+    checkArgument(found != null, "Did not find PrimitiveColumnIO for index field path %s", indexFieldPath);
     return found;
   }
 

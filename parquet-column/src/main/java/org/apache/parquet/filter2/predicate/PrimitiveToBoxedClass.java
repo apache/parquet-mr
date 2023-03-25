@@ -42,7 +42,7 @@ public class PrimitiveToBoxedClass {
   }
 
   public static Class<?> get(Class<?> c) {
-    checkArgument(c.isPrimitive(), "Class " + c + " is not primitive!");
+    checkArgument(c.isPrimitive(), "Class %s is not primitive!", c);
     return primitiveToBoxed.get(c);
   }
 

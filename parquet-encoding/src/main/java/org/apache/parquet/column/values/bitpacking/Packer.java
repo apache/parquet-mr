@@ -36,6 +36,12 @@ public enum Packer {
     public BytePacker newBytePacker(int width) {
       return beBytePackerFactory.newBytePacker(width);
     }
+
+    @Override
+    public BytePacker newBytePackerVector(int width) {
+      throw new RuntimeException("Not currently supported!");
+    }
+
     @Override
     public BytePackerForLong newBytePackerForLong(int width) {
       return beBytePackerForLongFactory.newBytePackerForLong(width);
@@ -55,6 +61,22 @@ public enum Packer {
     public BytePacker newBytePacker(int width) {
       return leBytePackerFactory.newBytePacker(width);
     }
+
+    @Override
+    public BytePacker newBytePackerVector(int width) {
+      if (leBytePacker512VectorFactory == null) {
+        synchronized (Packer.class) {
+          if (leBytePacker512VectorFactory == null) {
+            leBytePacker512VectorFactory = getBytePackerFactory("ByteBitPacking512VectorLE");
+          }
+        }
+      }
+      if (leBytePacker512VectorFactory == null) {
+        throw new RuntimeException("No enable java vector plugin on little endian architectures");
+      }
+      return leBytePacker512VectorFactory.newBytePacker(width);
+    }
+
     @Override
     public BytePackerForLong newBytePackerForLong(int width) {
       return leBytePackerForLongFactory.newBytePackerForLong(width);
@@ -86,6 +108,8 @@ public enum Packer {
   static IntPackerFactory leIntPackerFactory = getIntPackerFactory("LemireBitPackingLE");
   static BytePackerFactory beBytePackerFactory = getBytePackerFactory("ByteBitPackingBE");
   static BytePackerFactory leBytePackerFactory = getBytePackerFactory("ByteBitPackingLE");
+  // ByteBitPacking512VectorLE is not enabled default, so leBytePacker512VectorFactory cannot be initialized as a static property
+  static BytePackerFactory leBytePacker512VectorFactory = null;
   static BytePackerForLongFactory beBytePackerForLongFactory = getBytePackerForLongFactory("ByteBitPackingForLongBE");
   static BytePackerForLongFactory leBytePackerForLongFactory = getBytePackerForLongFactory("ByteBitPackingForLongLE");
 
@@ -100,6 +124,10 @@ public enum Packer {
    * @return a byte based packer
    */
   public abstract BytePacker newBytePacker(int width);
+
+  public BytePacker newBytePackerVector(int width) {
+    throw new RuntimeException("newBytePackerVector must be implemented by subclasses!");
+  }
 
   /**
    * @param width the width in bits of the packed values

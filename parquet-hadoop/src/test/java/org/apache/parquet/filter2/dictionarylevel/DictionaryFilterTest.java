@@ -35,6 +35,7 @@ import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.filter2.predicate.FilterPredicate;
 import org.apache.parquet.filter2.predicate.LogicalInverseRewriter;
+import org.apache.parquet.filter2.predicate.Operators;
 import org.apache.parquet.filter2.predicate.Operators.BinaryColumn;
 import org.apache.parquet.filter2.predicate.Operators.DoubleColumn;
 import org.apache.parquet.filter2.predicate.Operators.FloatColumn;
@@ -504,6 +505,17 @@ public class DictionaryFilterTest {
     FilterPredicate predNotIn4 = notIn(b, set4);
     assertFalse("Should not drop block for null", canDrop(predIn4, ccmd, dictionaries));
     assertFalse("Should not drop block for null", canDrop(predNotIn4, ccmd, dictionaries));
+
+    BinaryColumn sharpAndNull = binaryColumn("optional_single_value_field");
+
+    // Test the case that all non-null values are in the set but the column may have nulls and the set has no nulls.
+    Set<Binary> set5 = new HashSet<>();
+    set5.add(Binary.fromString("sharp"));
+    FilterPredicate predNotIn5 = notIn(sharpAndNull, set5);
+    FilterPredicate predIn5 = in(sharpAndNull, set5);
+    assertFalse("Should not drop block",
+      canDrop(predNotIn5, ccmd, dictionaries));
+    assertFalse("Should not drop block", canDrop(predIn5, ccmd, dictionaries));
   }
 
   @Test

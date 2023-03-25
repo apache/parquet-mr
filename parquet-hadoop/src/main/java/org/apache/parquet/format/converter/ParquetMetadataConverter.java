@@ -116,6 +116,7 @@ import org.apache.parquet.format.UUIDType;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.apache.parquet.hadoop.metadata.FileMetaData.EncryptionType;
 import org.apache.parquet.column.EncodingStats;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.internal.column.columnindex.BinaryTruncator;
@@ -216,7 +217,7 @@ public class ParquetMetadataConverter {
       }
       if (preBlockStartPos != 0) {
         Preconditions.checkState(blockStartPos >= preBlockStartPos + preBlockCompressedSize,
-          "Invalid block starting position:" + blockStartPos);
+          "Invalid block starting position: %s", blockStartPos);
       }
       preBlockStartPos = blockStartPos;
       preBlockCompressedSize = block.getCompressedSize();
@@ -1625,8 +1626,17 @@ public class ParquetMetadataConverter {
         keyValueMetaData.put(keyValue.key, keyValue.value);
       }
     }
+    EncryptionType encryptionType;
+    if (encryptedFooter) {
+      encryptionType = EncryptionType.ENCRYPTED_FOOTER;
+    } else if (parquetMetadata.isSetEncryption_algorithm()) {
+      encryptionType = EncryptionType.PLAINTEXT_FOOTER;
+    } else {
+      encryptionType = EncryptionType.UNENCRYPTED;
+    }
     return new ParquetMetadata(
-        new org.apache.parquet.hadoop.metadata.FileMetaData(messageType, keyValueMetaData, parquetMetadata.getCreated_by(), fileDecryptor),
+        new org.apache.parquet.hadoop.metadata.FileMetaData(messageType, keyValueMetaData,
+          parquetMetadata.getCreated_by(), encryptionType, fileDecryptor),
         blocks);
   }
 

@@ -118,6 +118,8 @@ class DirectCodecFactory extends CodecFactory implements AutoCloseable {
     } else if (codecName == CompressionCodecName.SNAPPY) {
       // avoid using the default Snappy codec since it allocates direct buffers at awkward spots.
       return new SnappyCompressor();
+    } else if (codecName == CompressionCodecName.ZSTD) {
+      return DirectZstd.createCompressor(configuration, pageSize);
     } else {
       // todo: create class similar to the SnappyCompressor for zlib and exclude it as
       // snappy is above since it also generates allocateDirect calls.
@@ -132,6 +134,8 @@ class DirectCodecFactory extends CodecFactory implements AutoCloseable {
       return new NoopDecompressor();
     } else if (codecName == CompressionCodecName.SNAPPY ) {
       return new SnappyDecompressor();
+    } else if (codecName == CompressionCodecName.ZSTD) {
+      return DirectZstd.createDecompressor(configuration);
     } else if (DirectCodecPool.INSTANCE.codec(codec).supportsDirectDecompression()) {
       return new FullDirectDecompressor(codecName);
     } else {

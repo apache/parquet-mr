@@ -46,6 +46,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -1014,8 +1015,8 @@ public class ParquetFileReader implements Closeable {
         consecutiveChunks.readAll(is, builder);
         inputStreams.add(is);
       } else {
-        consecutiveChunks.readAll(f, builder);
-      }
+      consecutiveChunks.readAll(f, builder);
+    }
     }
     for (Chunk chunk : builder.build()) {
       readChunkPages(chunk, block, rowGroup);
@@ -1049,6 +1050,35 @@ public class ParquetFileReader implements Closeable {
     }
 
     RowRanges rowRanges = getRowRanges(blockIndex);
+    return readFilteredRowGroup(blockIndex, rowRanges);
+  }
+
+  /**
+   * Reads all the columns requested from the specified row group. It may skip specific pages based on the
+   * {@code rowRanges} passed in. As the rows are not aligned among the pages of the different columns row
+   * synchronization might be required. See the documentation of the class SynchronizingColumnReader for details.
+   *
+   * @param blockIndex the index of the requested block
+   * @param rowRanges the row ranges to be read from the requested block
+   * @return the PageReadStore which can provide PageReaders for each column or null if there are no rows in this block
+   * @throws IOException if an error occurs while reading
+   * @throws IllegalArgumentException if the {@code blockIndex} is invalid or the {@code rowRanges} is null
+   */
+  public ColumnChunkPageReadStore readFilteredRowGroup(int blockIndex, RowRanges rowRanges) throws IOException {
+    if (blockIndex < 0 || blockIndex >= blocks.size()) {
+      throw new IllegalArgumentException(String.format("Invalid block index %s, the valid block index range are: " +
+        "[%s, %s]", blockIndex, 0, blocks.size() - 1));
+    }
+
+    if (Objects.isNull(rowRanges)) {
+      throw new IllegalArgumentException("RowRanges must not be null");
+    }
+
+    BlockMetaData block = blocks.get(blockIndex);
+    if (block.getRowCount() == 0L) {
+      return null;
+    }
+
     long rowCount = rowRanges.rowCount();
     if (rowCount == 0) {
       // There are no matching rows -> returning null
@@ -1161,8 +1191,8 @@ public class ParquetFileReader implements Closeable {
         if (LOG.isDebugEnabled()) {
           LOG.debug("{}: READING Consecutive chunk: {}", "SYNC", consecutiveChunks);
         }
-        consecutiveChunks.readAll(f, builder);
-      }
+      consecutiveChunks.readAll(f, builder);
+    }
     }
     for (Chunk chunk : builder.build()) {
       readChunkPages(chunk, block, rowGroup);
@@ -1188,7 +1218,7 @@ public class ParquetFileReader implements Closeable {
     }
   }
 
-  private ColumnIndexStore getColumnIndexStore(int blockIndex) {
+  public ColumnIndexStore getColumnIndexStore(int blockIndex) {
     ColumnIndexStore ciStore = blockIndexStores.get(blockIndex);
     if (ciStore == null) {
       ciStore = ColumnIndexStoreImpl.create(this, blocks.get(blockIndex), paths.keySet());
@@ -1464,7 +1494,7 @@ public class ParquetFileReader implements Closeable {
     try {
       if (f != null) {
         try {
-          f.close();
+        f.close();
         } catch (IOException e) {
         }
       }
@@ -1645,7 +1675,7 @@ public class ParquetFileReader implements Closeable {
       // and continue (effectively to the next column).
       if (isParallelColumnReaderEnabled()) {
         filePageReader.readAllRemainingPagesAsync();
-      } else {
+          }  else {
         filePageReader.readAllRemainingPages();
       }
       pagesInChunk = filePageReader.getPagesInChunk();
@@ -1877,10 +1907,10 @@ public class ParquetFileReader implements Closeable {
       if (!isAsyncIOReaderEnabled()) {
         // pre-read the files into the allocated buffers
         long startTime = System.nanoTime();
-        for (ByteBuffer buffer : buffers) {
+      for (ByteBuffer buffer : buffers) {
           is.readFully(buffer);
-          buffer.flip();
-        }
+        buffer.flip();
+      }
         long timeSpent = System.nanoTime() - startTime;
         LOG.debug("SYNC Stream: READ - {}", timeSpent / 1000.0);
         stream = ByteBufferInputStream.wrap(buffers);

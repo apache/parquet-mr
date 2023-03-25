@@ -121,7 +121,6 @@ public final class Operators {
   static abstract class ColumnFilterPredicate<T extends Comparable<T>> implements FilterPredicate, Serializable  {
     private final Column<T> column;
     private final T value;
-    private final String toString;
 
     protected ColumnFilterPredicate(Column<T> column, T value) {
       this.column = Objects.requireNonNull(column, "column cannot be null");
@@ -129,9 +128,6 @@ public final class Operators {
       // Eq and NotEq allow value to be null, Lt, Gt, LtEq, GtEq however do not, so they guard against
       // null in their own constructors.
       this.value = value;
-
-      String name = getClass().getSimpleName().toLowerCase(Locale.ENGLISH);
-      this.toString = name + "(" + column.getColumnPath().toDotString() + ", " + value + ")";
     }
 
     public Column<T> getColumn() {
@@ -144,7 +140,8 @@ public final class Operators {
 
     @Override
     public String toString() {
-      return toString;
+      return getClass().getSimpleName().toLowerCase(Locale.ENGLISH) + "(" + column.getColumnPath().toDotString() + ", "
+          + value + ")";
     }
 
     @Override
@@ -330,13 +327,10 @@ public final class Operators {
   private static abstract class BinaryLogicalFilterPredicate implements FilterPredicate, Serializable {
     private final FilterPredicate left;
     private final FilterPredicate right;
-    private final String toString;
 
     protected BinaryLogicalFilterPredicate(FilterPredicate left, FilterPredicate right) {
       this.left = Objects.requireNonNull(left, "left cannot be null");
       this.right = Objects.requireNonNull(right, "right cannot be null");
-      String name = getClass().getSimpleName().toLowerCase(Locale.ENGLISH);
-      this.toString = name + "(" + left + ", " + right + ")";
     }
 
     public FilterPredicate getLeft() {
@@ -349,7 +343,7 @@ public final class Operators {
 
     @Override
     public String toString() {
-      return toString;
+      return getClass().getSimpleName().toLowerCase(Locale.ENGLISH) + "(" + left + ", " + right + ")";
     }
 
     @Override
@@ -400,11 +394,9 @@ public final class Operators {
 
   public static class Not implements FilterPredicate, Serializable {
     private final FilterPredicate predicate;
-    private final String toString;
 
     Not(FilterPredicate predicate) {
       this.predicate = Objects.requireNonNull(predicate, "predicate cannot be null");
-      this.toString = "not(" + predicate + ")";
     }
 
     public FilterPredicate getPredicate() {
@@ -413,7 +405,7 @@ public final class Operators {
 
     @Override
     public String toString() {
-      return toString;
+      return "not(" + predicate + ")";
     }
 
     @Override
@@ -456,15 +448,12 @@ public final class Operators {
     
   public static final class UserDefinedByClass<T extends Comparable<T>, U extends UserDefinedPredicate<T>> extends UserDefined<T, U> {
     private final Class<U> udpClass;
-    private final String toString;
     private static final String INSTANTIATION_ERROR_MESSAGE =
         "Could not instantiate custom filter: %s. User defined predicates must be static classes with a default constructor.";
 
     UserDefinedByClass(Column<T> column, Class<U> udpClass) {
       super(column);
       this.udpClass = Objects.requireNonNull(udpClass, "udpClass cannot be null");
-      String name = getClass().getSimpleName().toLowerCase(Locale.ENGLISH);
-      this.toString = name + "(" + column.getColumnPath().toDotString() + ", " + udpClass.getName() + ")";
 
       // defensively try to instantiate the class early to make sure that it's possible
       getUserDefinedPredicate();
@@ -485,7 +474,8 @@ public final class Operators {
 
     @Override
     public String toString() {
-      return toString;
+      return getClass().getSimpleName().toLowerCase(Locale.ENGLISH) + "(" + column.getColumnPath().toDotString() + ", "
+          + udpClass.getName() + ")";
     }
 
     @Override
@@ -511,14 +501,11 @@ public final class Operators {
   }
   
   public static final class UserDefinedByInstance<T extends Comparable<T>, U extends UserDefinedPredicate<T> & Serializable> extends UserDefined<T, U> {
-    private final String toString;
     private final U udpInstance;
 
     UserDefinedByInstance(Column<T> column, U udpInstance) {
       super(column);
       this.udpInstance = Objects.requireNonNull(udpInstance, "udpInstance cannot be null");
-      String name = getClass().getSimpleName().toLowerCase(Locale.ENGLISH);
-      this.toString = name + "(" + column.getColumnPath().toDotString() + ", " + udpInstance + ")";
     }
 
     @Override
@@ -528,7 +515,8 @@ public final class Operators {
 
     @Override
     public String toString() {
-      return toString;
+      return getClass().getSimpleName().toLowerCase(Locale.ENGLISH) + "(" + column.getColumnPath().toDotString() + ", "
+          + udpInstance + ")";
     }
 
     @Override
@@ -557,11 +545,9 @@ public final class Operators {
   // of the not() operator
   public static final class LogicalNotUserDefined <T extends Comparable<T>, U extends UserDefinedPredicate<T>> implements FilterPredicate, Serializable {
     private final UserDefined<T, U> udp;
-    private final String toString;
 
     LogicalNotUserDefined(UserDefined<T, U> userDefined) {
       this.udp = Objects.requireNonNull(userDefined, "userDefined cannot be null");
-      this.toString = "inverted(" + udp + ")";
     }
 
     public UserDefined<T, U> getUserDefined() {
@@ -575,7 +561,7 @@ public final class Operators {
 
     @Override
     public String toString() {
-      return toString;
+      return "inverted(" + udp + ")";
     }
 
     @Override

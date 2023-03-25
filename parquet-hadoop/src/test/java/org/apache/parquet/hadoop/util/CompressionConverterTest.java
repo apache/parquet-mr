@@ -65,7 +65,7 @@ import static org.apache.parquet.schema.Type.Repetition.REQUIRED;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertTrue;
 
-public class CompressionConveterTest {
+public class CompressionConverterTest {
 
   private Configuration conf = new Configuration();
   private Map<String, String> extraMeta

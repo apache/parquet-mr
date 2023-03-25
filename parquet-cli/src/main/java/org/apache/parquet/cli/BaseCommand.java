@@ -299,11 +299,11 @@ public abstract class BaseCommand implements Command, Configurable {
         // final URLs must end in '/' for URLClassLoader
         File path = lib.endsWith("/") ? new File(lib) : new File(lib + "/");
         Preconditions.checkArgument(path.exists(),
-            "Lib directory does not exist: " + lib);
+            "Lib directory does not exist: %s", lib);
         Preconditions.checkArgument(path.isDirectory(),
-            "Not a directory: " + lib);
+            "Not a directory: %s", lib);
         Preconditions.checkArgument(path.canRead() && path.canExecute(),
-            "Insufficient permissions to access lib directory: " + lib);
+            "Insufficient permissions to access lib directory: %s", lib);
         urls.add(path.toURI().toURL());
       }
     }
@@ -311,11 +311,11 @@ public abstract class BaseCommand implements Command, Configurable {
       for (String jar : jars) {
         File path = new File(jar);
         Preconditions.checkArgument(path.exists(),
-            "Jar files does not exist: " + jar);
+            "Jar files does not exist: %s", jar);
         Preconditions.checkArgument(path.isFile(),
-            "Not a file: " + jar);
+            "Not a file: %s", jar);
         Preconditions.checkArgument(path.canRead(),
-            "Cannot read jar file: " + jar);
+            "Cannot read jar file: %s", jar);
         urls.add(path.toURI().toURL());
       }
     }

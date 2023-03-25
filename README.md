@@ -83,6 +83,21 @@ Parquet is a very active project, and new features are being added quickly. Here
 * Column stats
 * Delta encoding
 * Index pages
+* Java Vector API support (experimental)
+
+## Java Vector API support
+`The feature is experimental and is currently not part of the parquet distribution`.
+Parquet-MR has supported Java Vector API to speed up reading, to enable this feature:
+* Java 17+, 64-bit
+* Requiring the CPU to support instruction sets:
+  * avx512vbmi
+  * avx512_vbmi2
+* To build the jars: `mvn clean package -P vector-plugins`
+* For Apache Spark to enable this feature:
+  * Build parquet and replace the parquet-encoding-{VERSION}.jar on the spark jars folder
+  * Build parquet-encoding-vector and copy parquet-encoding-vector-{VERSION}.jar to the spark jars folder
+  * Edit spark class#VectorizedRleValuesReader, function#readNextGroup refer to parquet class#ParquetReadRouter, function#readBatchUsing512Vector
+  * Build spark with maven and replace spark-sql_2.12-{VERSION}.jar on the spark jars folder
 
 ## Map/Reduce integration
 

@@ -437,7 +437,7 @@ public class Types {
     protected PrimitiveType build(String name) {
       if (PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY == primitiveType) {
         Preconditions.checkArgument(length > 0,
-            "Invalid FIXED_LEN_BYTE_ARRAY length: " + length);
+            "Invalid FIXED_LEN_BYTE_ARRAY length: %s", length);
       }
 
       DecimalMetadata meta = decimalMetadata();
@@ -477,13 +477,13 @@ public class Types {
             if (primitiveType == PrimitiveTypeName.INT32) {
               Preconditions.checkState(
                   meta.getPrecision() <= MAX_PRECISION_INT32,
-                  "INT32 cannot store " + meta.getPrecision() + " digits " +
-                      "(max " + MAX_PRECISION_INT32 + ")");
+                  "INT32 cannot store %s digits (max %s)", 
+                  meta.getPrecision(), MAX_PRECISION_INT32);
             } else if (primitiveType == PrimitiveTypeName.INT64) {
               Preconditions.checkState(
                   meta.getPrecision() <= MAX_PRECISION_INT64,
-                  "INT64 cannot store " + meta.getPrecision() + " digits " +
-                  "(max " + MAX_PRECISION_INT64 + ")");
+                  "INT64 cannot store %s digits (max %s)", 
+                  meta.getPrecision(), MAX_PRECISION_INT64);
               if (meta.getPrecision() <= MAX_PRECISION_INT32) {
                 LOGGER.warn("Decimal with {} digits is stored in an INT64, but fits in an INT32. See {}.",
                             precision, LOGICAL_TYPES_DOC_URL);
@@ -491,8 +491,8 @@ public class Types {
             } else if (primitiveType == PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY) {
               Preconditions.checkState(
                   meta.getPrecision() <= maxPrecision(length),
-                  "FIXED(" + length + ") cannot store " + meta.getPrecision() +
-                  " digits (max " + maxPrecision(length) + ")");
+                  "FIXED(%s) cannot store %s digits (max %s)", 
+                  length, meta.getPrecision(), maxPrecision(length));
             }
             return Optional.of(true);
           }
@@ -555,26 +555,26 @@ public class Types {
           private Optional<Boolean> checkFixedPrimitiveType(int l, LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(
                 primitiveType == PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY && length == l,
-              logicalTypeAnnotation.toString() + " can only annotate FIXED_LEN_BYTE_ARRAY(" + l + ')');
+              "%s can only annotate FIXED_LEN_BYTE_ARRAY(%s)", logicalTypeAnnotation, l);
             return Optional.of(true);
           }
 
           private Optional<Boolean> checkBinaryPrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(
                 primitiveType == PrimitiveTypeName.BINARY,
-              logicalTypeAnnotation.toString() + " can only annotate BINARY");
+              "%s can only annotate BINARY", logicalTypeAnnotation);
             return Optional.of(true);
           }
 
           private Optional<Boolean> checkInt32PrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(primitiveType == PrimitiveTypeName.INT32,
-              logicalTypeAnnotation.toString() + " can only annotate INT32");
+              "%s can only annotate INT32", logicalTypeAnnotation);
             return Optional.of(true);
           }
 
           private Optional<Boolean> checkInt64PrimitiveType(LogicalTypeAnnotation logicalTypeAnnotation) {
             Preconditions.checkState(primitiveType == PrimitiveTypeName.INT64,
-              logicalTypeAnnotation.toString() + " can only annotate INT64");
+              "%s can only annotate INT64", logicalTypeAnnotation);
             return Optional.of(true);
           }
         }).orElseThrow(() -> new IllegalStateException(logicalTypeAnnotation + " can not be applied to a primitive type"));
@@ -612,9 +612,9 @@ public class Types {
           precision = decimalType.getPrecision();
         }
         Preconditions.checkArgument(precision > 0,
-            "Invalid DECIMAL precision: " + precision);
+            "Invalid DECIMAL precision: %s", precision);
         Preconditions.checkArgument(this.scale >= 0,
-            "Invalid DECIMAL scale: " + this.scale);
+            "Invalid DECIMAL scale: %s", this.scale);
         Preconditions.checkArgument(this.scale <= precision,
             "Invalid DECIMAL scale: cannot be greater than precision");
         meta = new DecimalMetadata(precision, scale);

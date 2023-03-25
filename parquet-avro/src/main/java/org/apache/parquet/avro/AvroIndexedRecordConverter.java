@@ -392,7 +392,7 @@ class AvroIndexedRecordConverter<T extends IndexedRecord> extends GroupConverter
       @Override
       public Converter getConverter(int fieldIndex) {
         Preconditions.checkArgument(
-            fieldIndex == 0, "Illegal field index: " + fieldIndex);
+            fieldIndex == 0, "Illegal field index: %s", fieldIndex);
         return elementConverter;
       }
 

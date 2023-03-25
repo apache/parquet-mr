@@ -279,8 +279,8 @@ public abstract class LogicalTypeAnnotation {
   public static IntLogicalTypeAnnotation intType(final int bitWidth, final boolean isSigned) {
     Preconditions.checkArgument(
       bitWidth == 8 || bitWidth == 16 || bitWidth == 32 || bitWidth == 64,
-      "Invalid bit width for integer logical type, " + bitWidth + " is not allowed, " +
-        "valid bit width values: 8, 16, 32, 64");
+      "Invalid bit width for integer logical type, %s is not allowed, " +
+        "valid bit width values: 8, 16, 32, 64", bitWidth);
     return new IntLogicalTypeAnnotation(bitWidth, isSigned);
   }
 

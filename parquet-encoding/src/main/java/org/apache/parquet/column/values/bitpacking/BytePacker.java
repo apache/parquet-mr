@@ -31,6 +31,13 @@ public abstract class BytePacker {
 
   private final int bitWidth;
 
+  /**
+   * Number of integer values to be unpacked at a time.
+   * unpackCount is a multiple of 8
+   * For AVX512, the register is 512 bits, so output values at a time maybe different when different bitWidth.
+   */
+  protected int unpackCount;
+
   BytePacker(int bitWidth) {
     this.bitWidth = bitWidth;
   }
@@ -40,6 +47,10 @@ public abstract class BytePacker {
    */
   public final int getBitWidth() {
     return bitWidth;
+  }
+
+  public int getUnpackCount() {
+    throw new RuntimeException("getUnpackCount must be implemented by subclass!");
   }
 
   /**
@@ -104,5 +115,27 @@ public abstract class BytePacker {
   @Deprecated
   public void unpack32Values(byte[] input, int inPos, int[] output, int outPos) {
     unpack32Values(ByteBuffer.wrap(input), inPos, output, outPos);
+  }
+
+  /**
+   * unpack bitWidth bytes from input at inPos into {unpackCount} values in output at outPos using Java Vector API.
+   * @param input the input bytes
+   * @param inPos where to read from in input
+   * @param output the output values
+   * @param outPos where to write to in output
+   */
+  public void unpackValuesUsingVector(final byte[] input, final int inPos, final int[] output, final int outPos) {
+    throw new RuntimeException("unpackValuesUsingVector must be implemented by subclass!");
+  }
+
+  /**
+   * unpack bitWidth bytes from input at inPos into {unpackCount} values in output at outPos using Java Vector API.
+   * @param input the input bytes
+   * @param inPos where to read from in input
+   * @param output the output values
+   * @param outPos where to write to in output
+   */
+  public void unpackValuesUsingVector(final ByteBuffer input, final int inPos, final int[] output, final int outPos) {
+    throw new RuntimeException("unpackValuesUsingVector must be implemented by subclass!");
   }
 }

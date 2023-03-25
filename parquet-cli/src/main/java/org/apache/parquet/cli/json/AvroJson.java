@@ -524,7 +524,7 @@ public class AvroJson {
     switch (node.getNodeType()) {
       case OBJECT:
         Preconditions.checkArgument(node instanceof ObjectNode,
-            "Expected instance of ObjectNode: " + node);
+            "Expected instance of ObjectNode: %s", node);
 
         // use LinkedHashMap to preserve field order
         Map<String, T> fields = Maps.newLinkedHashMap();
@@ -542,7 +542,7 @@ public class AvroJson {
 
       case ARRAY:
         Preconditions.checkArgument(node instanceof ArrayNode,
-            "Expected instance of ArrayNode: " + node);
+            "Expected instance of ArrayNode: %s", node);
 
         List<T> elements = Lists.newArrayListWithExpectedSize(node.size());
 
@@ -554,36 +554,36 @@ public class AvroJson {
 
       case BINARY:
         Preconditions.checkArgument(node instanceof BinaryNode,
-            "Expected instance of BinaryNode: " + node);
+            "Expected instance of BinaryNode: %s", node);
         return visitor.binary((BinaryNode) node);
 
       case STRING:
         Preconditions.checkArgument(node instanceof TextNode,
-            "Expected instance of TextNode: " + node);
+            "Expected instance of TextNode: %s", node);
 
         return visitor.text((TextNode) node);
 
       case NUMBER:
         Preconditions.checkArgument(node instanceof NumericNode,
-            "Expected instance of NumericNode: " + node);
+            "Expected instance of NumericNode: %s", node);
 
         return visitor.number((NumericNode) node);
 
       case BOOLEAN:
         Preconditions.checkArgument(node instanceof BooleanNode,
-            "Expected instance of BooleanNode: " + node);
+            "Expected instance of BooleanNode: %s", node);
 
         return visitor.bool((BooleanNode) node);
 
       case MISSING:
         Preconditions.checkArgument(node instanceof MissingNode,
-            "Expected instance of MissingNode: " + node);
+            "Expected instance of MissingNode: %s", node);
 
         return visitor.missing((MissingNode) node);
 
       case NULL:
         Preconditions.checkArgument(node instanceof NullNode,
-            "Expected instance of NullNode: " + node);
+            "Expected instance of NullNode: %s", node);
 
         return visitor.nullNode((NullNode) node);
 

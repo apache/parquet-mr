@@ -63,9 +63,17 @@ public class ParquetMetadata {
 
   private static String toJSON(ParquetMetadata parquetMetaData, boolean isPrettyPrint) {
     StringWriter stringWriter = new StringWriter();
+
     try {
       if (isPrettyPrint) {
-        objectMapper.writerWithDefaultPrettyPrinter().writeValue(stringWriter, parquetMetaData);
+        Object objectToPrint;
+        if (parquetMetaData.getFileMetaData() == null ||
+            parquetMetaData.getFileMetaData().getEncryptionType() == FileMetaData.EncryptionType.UNENCRYPTED) {
+          objectToPrint = parquetMetaData;
+        } else {
+          objectToPrint = parquetMetaData.getFileMetaData();
+        }
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(stringWriter, objectToPrint);
       } else {
         objectMapper.writeValue(stringWriter, parquetMetaData);
       }

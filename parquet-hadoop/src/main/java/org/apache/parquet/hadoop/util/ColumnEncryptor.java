@@ -20,44 +20,17 @@ package org.apache.parquet.hadoop.util;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.parquet.HadoopReadOptions;
 import org.apache.parquet.bytes.BytesInput;
-import org.apache.parquet.column.ColumnDescriptor;
-import org.apache.parquet.column.ParquetProperties;
-import org.apache.parquet.column.page.DictionaryPage;
-import org.apache.parquet.column.page.PageReadStore;
-import org.apache.parquet.crypto.AesCipher;
 import org.apache.parquet.crypto.FileEncryptionProperties;
-import org.apache.parquet.crypto.InternalColumnEncryptionSetup;
-import org.apache.parquet.crypto.InternalFileEncryptor;
-import org.apache.parquet.format.BlockCipher;
-import org.apache.parquet.format.DataPageHeader;
-import org.apache.parquet.format.DataPageHeaderV2;
-import org.apache.parquet.format.DictionaryPageHeader;
-import org.apache.parquet.format.PageHeader;
-import org.apache.parquet.format.converter.ParquetMetadataConverter;
-import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.ParquetFileWriter;
-import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnPath;
-import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.hadoop.rewrite.ParquetRewriter;
+import org.apache.parquet.hadoop.rewrite.RewriteOptions;
 import org.apache.parquet.hadoop.util.CompressionConverter.TransParquetFileReader;
-import org.apache.parquet.internal.column.columnindex.OffsetIndex;
-import org.apache.parquet.schema.MessageType;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
-
-import static org.apache.parquet.column.ParquetProperties.DEFAULT_COLUMN_INDEX_TRUNCATE_LENGTH;
-import static org.apache.parquet.column.ParquetProperties.DEFAULT_STATISTICS_TRUNCATE_LENGTH;
-import static org.apache.parquet.crypto.ModuleCipherFactory.ModuleType;
-import static org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER;
-import static org.apache.parquet.hadoop.ParquetWriter.DEFAULT_BLOCK_SIZE;
-import static org.apache.parquet.hadoop.ParquetWriter.MAX_PADDING_SIZE_DEFAULT;
 
 /**
  * This class is for fast rewriting existing file with column encryption
@@ -67,74 +40,8 @@ import static org.apache.parquet.hadoop.ParquetWriter.MAX_PADDING_SIZE_DEFAULT;
  *
  * For columns not to be encrypted, the whole column chunk will be appended directly to writer.
  */
+@Deprecated
 public class ColumnEncryptor {
-  private static class EncryptorRunTime {
-    private final InternalColumnEncryptionSetup colEncrSetup;
-    private final BlockCipher.Encryptor dataEncryptor;
-    private final BlockCipher.Encryptor metaDataEncryptor;
-    private final byte[] fileAAD ;
-
-    private byte[] dataPageHeaderAAD;
-    private byte[] dataPageAAD;
-    private byte[] dictPageHeaderAAD;
-    private byte[] dictPageAAD;
-
-    public EncryptorRunTime(InternalFileEncryptor fileEncryptor, ColumnChunkMetaData chunk,
-                            int blockId, int columnId) throws IOException  {
-      if (fileEncryptor == null) {
-        this.colEncrSetup = null;
-        this.dataEncryptor =  null;
-        this.metaDataEncryptor =  null;
-
-        this.fileAAD =  null;
-        this.dataPageHeaderAAD =  null;
-        this.dataPageAAD =  null;
-        this.dictPageHeaderAAD =  null;
-        this.dictPageAAD =  null;
-      } else {
-        this.colEncrSetup = fileEncryptor.getColumnSetup(chunk.getPath(), true, columnId);
-        this.dataEncryptor = colEncrSetup.getDataEncryptor();
-        this.metaDataEncryptor = colEncrSetup.getMetaDataEncryptor();
-
-        this.fileAAD = fileEncryptor.getFileAAD();
-        this.dataPageHeaderAAD = createAAD(colEncrSetup, ModuleType.DataPageHeader, blockId, columnId);
-        this.dataPageAAD = createAAD(colEncrSetup, ModuleType.DataPage, blockId, columnId);
-        this.dictPageHeaderAAD = createAAD(colEncrSetup, ModuleType.DictionaryPageHeader, blockId, columnId);
-        this.dictPageAAD = createAAD(colEncrSetup, ModuleType.DictionaryPage, blockId, columnId);
-      }
-    }
-
-    private byte[] createAAD(InternalColumnEncryptionSetup colEncrSetup, ModuleType moduleType, int blockId, int columnId) {
-      if (colEncrSetup != null && colEncrSetup.isEncrypted()) {
-        return AesCipher.createModuleAAD(fileAAD, moduleType, blockId, columnId, 0);
-      }
-      return null;
-    }
-
-    public BlockCipher.Encryptor getDataEncryptor() {
-      return this.dataEncryptor;
-    }
-
-    public BlockCipher.Encryptor getMetaDataEncryptor() {
-      return this.metaDataEncryptor;
-    }
-
-    public byte[] getDataPageHeaderAAD() {
-      return this.dataPageHeaderAAD;
-    }
-
-    public byte[] getDataPageAAD() {
-      return this.dataPageAAD;
-    }
-
-    public byte[] getDictPageHeaderAAD() {
-      return this.dictPageHeaderAAD;
-    }
-
-    public byte[] getDictPageAAD() {
-      return this.dictPageAAD;
-    }
-  }
 
   private Configuration conf;
 
@@ -154,157 +61,11 @@ public class ColumnEncryptor {
   public void encryptColumns(String inputFile, String outputFile, List<String> paths, FileEncryptionProperties fileEncryptionProperties) throws IOException {
     Path inPath = new Path(inputFile);
     Path outPath = new Path(outputFile);
-
-    ParquetMetadata metaData = ParquetFileReader.readFooter(conf, inPath, NO_FILTER);
-    MessageType schema = metaData.getFileMetaData().getSchema();
-
-    ParquetFileWriter writer = new ParquetFileWriter(HadoopOutputFile.fromPath(outPath, conf), schema, ParquetFileWriter.Mode.OVERWRITE,
-      DEFAULT_BLOCK_SIZE, MAX_PADDING_SIZE_DEFAULT, DEFAULT_COLUMN_INDEX_TRUNCATE_LENGTH, DEFAULT_STATISTICS_TRUNCATE_LENGTH,
-      ParquetProperties.DEFAULT_PAGE_WRITE_CHECKSUM_ENABLED, fileEncryptionProperties);
-    writer.start();
-
-    try (TransParquetFileReader reader = new TransParquetFileReader(HadoopInputFile.fromPath(inPath, conf), HadoopReadOptions.builder(conf).build())) {
-      processBlocks(reader, writer, metaData, schema, paths);
-    }
-    writer.end(metaData.getFileMetaData().getKeyValueMetaData());
-  }
-
-  private void processBlocks(TransParquetFileReader reader, ParquetFileWriter writer, ParquetMetadata meta,
-                            MessageType schema, List<String> encryptPaths) throws IOException {
-    Set<ColumnPath> encryptColumnsPath = convertToColumnPaths(encryptPaths);
-    int blockId = 0;
-    PageReadStore store = reader.readNextRowGroup();
-
-    while (store != null) {
-      writer.startBlock(store.getRowCount());
-
-      List<ColumnChunkMetaData> columnsInOrder = meta.getBlocks().get(blockId).getColumns();
-      Map<ColumnPath, ColumnDescriptor> descriptorsMap = schema.getColumns().stream().collect(
-        Collectors.toMap(x -> ColumnPath.get(x.getPath()), x -> x));
-
-      for (int i = 0; i < columnsInOrder.size(); i += 1) {
-        ColumnChunkMetaData chunk = columnsInOrder.get(i);
-        // If a column is encrypted, we simply throw exception.
-        // Later we can add a feature to trans-encrypt it with different keys
-        if (chunk.isEncrypted()) {
-          throw new IOException("Column " + chunk.getPath().toDotString() + " is already encrypted");
-        }
-        ColumnDescriptor descriptor = descriptorsMap.get(chunk.getPath());
-        processChunk(descriptor, chunk, reader, writer, encryptColumnsPath, blockId, i, meta.getFileMetaData().getCreatedBy());
-      }
-
-      writer.endBlock();
-      store = reader.readNextRowGroup();
-      blockId++;
-    }
-  }
-
-  private void processChunk(ColumnDescriptor descriptor, ColumnChunkMetaData chunk, TransParquetFileReader reader, ParquetFileWriter writer,
-                            Set<ColumnPath> encryptPaths, int blockId, int columnId, String createdBy) throws IOException {
-    reader.setStreamPosition(chunk.getStartingPos());
-    writer.startColumn(descriptor, chunk.getValueCount(), chunk.getCodec());
-    processPages(reader, chunk, writer, createdBy, blockId, columnId, encryptPaths.contains(chunk.getPath()));
-    writer.endColumn();
-  }
-
-  private void processPages(TransParquetFileReader reader, ColumnChunkMetaData chunk, ParquetFileWriter writer,
-                            String createdBy, int blockId, int columnId, boolean encrypt) throws IOException {
-    int pageOrdinal = 0;
-    EncryptorRunTime encryptorRunTime = new EncryptorRunTime(writer.getEncryptor(), chunk, blockId, columnId);
-    DictionaryPage dictionaryPage = null;
-    long readValues = 0;
-    ParquetMetadataConverter converter = new ParquetMetadataConverter();
-    OffsetIndex offsetIndex = reader.readOffsetIndex(chunk);
-    reader.setStreamPosition(chunk.getStartingPos());
-    long totalChunkValues = chunk.getValueCount();
-    while (readValues < totalChunkValues) {
-      PageHeader pageHeader = reader.readPageHeader();
-      byte[] pageLoad;
-      switch (pageHeader.type) {
-        case DICTIONARY_PAGE:
-          if (dictionaryPage != null) {
-            throw new IOException("has more than one dictionary page in column chunk");
-          }
-          //No quickUpdatePageAAD needed for dictionary page
-          DictionaryPageHeader dictPageHeader = pageHeader.dictionary_page_header;
-          pageLoad = processPayload(reader, pageHeader.getCompressed_page_size(), encryptorRunTime.getDataEncryptor(), encryptorRunTime.getDictPageAAD(), encrypt);
-          writer.writeDictionaryPage(new DictionaryPage(BytesInput.from(pageLoad),
-                                        pageHeader.getUncompressed_page_size(),
-                                        dictPageHeader.getNum_values(),
-                                        converter.getEncoding(dictPageHeader.getEncoding())),
-            encryptorRunTime.getMetaDataEncryptor(), encryptorRunTime.getDictPageHeaderAAD());
-          break;
-        case DATA_PAGE:
-          if (encrypt) {
-            AesCipher.quickUpdatePageAAD(encryptorRunTime.getDataPageHeaderAAD(), pageOrdinal);
-            AesCipher.quickUpdatePageAAD(encryptorRunTime.getDataPageAAD(), pageOrdinal);
-          }
-          DataPageHeader headerV1 = pageHeader.data_page_header;
-          pageLoad = processPayload(reader, pageHeader.getCompressed_page_size(), encryptorRunTime.getDataEncryptor(), encryptorRunTime.getDataPageAAD(), encrypt);
-          readValues += headerV1.getNum_values();
-          if (offsetIndex != null) {
-            long rowCount = 1 + offsetIndex.getLastRowIndex(pageOrdinal, totalChunkValues) - offsetIndex.getFirstRowIndex(pageOrdinal);
-            writer.writeDataPage(Math.toIntExact(headerV1.getNum_values()),
-              pageHeader.getUncompressed_page_size(),
-              BytesInput.from(pageLoad),
-              converter.fromParquetStatistics(createdBy, headerV1.getStatistics(), chunk.getPrimitiveType()),
-              rowCount,
-              converter.getEncoding(headerV1.getRepetition_level_encoding()),
-              converter.getEncoding(headerV1.getDefinition_level_encoding()),
-              converter.getEncoding(headerV1.getEncoding()),
-              encryptorRunTime.getMetaDataEncryptor(),
-              encryptorRunTime.getDataPageHeaderAAD());
-          } else {
-            writer.writeDataPage(Math.toIntExact(headerV1.getNum_values()),
-              pageHeader.getUncompressed_page_size(),
-              BytesInput.from(pageLoad),
-              converter.fromParquetStatistics(createdBy, headerV1.getStatistics(), chunk.getPrimitiveType()),
-              converter.getEncoding(headerV1.getRepetition_level_encoding()),
-              converter.getEncoding(headerV1.getDefinition_level_encoding()),
-              converter.getEncoding(headerV1.getEncoding()),
-              encryptorRunTime.getMetaDataEncryptor(),
-              encryptorRunTime.getDataPageHeaderAAD());
-          }
-          pageOrdinal++;
-          break;
-        case DATA_PAGE_V2:
-          if (encrypt) {
-            AesCipher.quickUpdatePageAAD(encryptorRunTime.getDataPageHeaderAAD(), pageOrdinal);
-            AesCipher.quickUpdatePageAAD(encryptorRunTime.getDataPageAAD(), pageOrdinal);
-          }
-          DataPageHeaderV2 headerV2 = pageHeader.data_page_header_v2;
-          int rlLength = headerV2.getRepetition_levels_byte_length();
-          BytesInput rlLevels = readBlockAllocate(rlLength, reader);
-          int dlLength = headerV2.getDefinition_levels_byte_length();
-          BytesInput dlLevels = readBlockAllocate(dlLength, reader);
-          int payLoadLength = pageHeader.getCompressed_page_size() - rlLength - dlLength;
-          int rawDataLength = pageHeader.getUncompressed_page_size() - rlLength - dlLength;
-          pageLoad = processPayload(reader, payLoadLength, encryptorRunTime.getDataEncryptor(), encryptorRunTime.getDataPageAAD(), encrypt);
-          readValues += headerV2.getNum_values();
-          writer.writeDataPageV2(headerV2.getNum_rows(),
-            headerV2.getNum_nulls(),
-            headerV2.getNum_values(),
-            rlLevels,
-            dlLevels,
-            converter.getEncoding(headerV2.getEncoding()),
-            BytesInput.from(pageLoad),
-            rawDataLength,
-            converter.fromParquetStatistics(createdBy, headerV2.getStatistics(), chunk.getPrimitiveType()));
-          pageOrdinal++;
-          break;
-        default:
-        break;
-      }
-    }
-  }
-
-  private byte[] processPayload(TransParquetFileReader reader, int payloadLength, BlockCipher.Encryptor dataEncryptor,
-                                byte[] AAD, boolean encrypt) throws IOException {
-    byte[] data = readBlock(payloadLength, reader);
-    if (!encrypt) {
-      return data;
-    }
-    return dataEncryptor.encrypt(data, AAD);
+    RewriteOptions options = new RewriteOptions.Builder(conf, inPath, outPath).
+            encrypt(paths).encryptionProperties(fileEncryptionProperties).build();
+    ParquetRewriter rewriter = new ParquetRewriter(options);
+    rewriter.processBlocks();
+    rewriter.close();
   }
 
   public byte[] readBlock(int length, TransParquetFileReader reader) throws IOException {

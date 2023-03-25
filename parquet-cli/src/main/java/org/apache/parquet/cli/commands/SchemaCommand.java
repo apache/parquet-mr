@@ -70,7 +70,7 @@ public class SchemaCommand extends BaseCommand {
 
     if (targets.size() > 1) {
       Preconditions.checkArgument(outputPath == null,
-          "Cannot output multiple schemas to file " + outputPath);
+          "Cannot output multiple schemas to file %s", outputPath);
       for (String source : targets) {
         console.info("{}: {}", source, getSchema(source));
       }

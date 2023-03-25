@@ -150,6 +150,22 @@ public class TestBloomFiltering {
     return list;
   }
 
+  protected static List<PhoneBookWriter.User> generateDictionaryData(int rowCount) {
+    List<PhoneBookWriter.User> users = new ArrayList<>();
+    List<String> names = new ArrayList<>();
+    for (int i = 0; i < rowCount / 5; i++) {
+      names.add("miller");
+      names.add("anderson");
+      names.add("thomas");
+      names.add("chenLiang");
+      names.add("len");
+    }
+    for (int i = 0; i < rowCount; ++i) {
+      users.add(new PhoneBookWriter.User(i, names.get(i), generatePhoneNumbers(), generateLocation(i, rowCount)));
+    }
+    return users;
+  }
+
   private static List<PhoneBookWriter.PhoneNumber> generatePhoneNumbers() {
     int length = RANDOM.nextInt(5) - 1;
     if (length < 0) {
@@ -239,7 +255,7 @@ public class TestBloomFiltering {
     assertEquals(DATA.stream().filter(expectedFilter).collect(Collectors.toList()), result);
   }
 
-  private static FileEncryptionProperties getFileEncryptionProperties() {
+  protected static FileEncryptionProperties getFileEncryptionProperties() {
     ColumnEncryptionProperties columnProperties1 = ColumnEncryptionProperties
       .builder("id")
       .withKey(COLUMN_ENCRYPTION_KEY1)

@@ -106,7 +106,7 @@ public abstract class PlainValuesDictionary extends Dictionary {
       } else {
         // dictionary values are stored as fixed-length arrays
         Preconditions.checkArgument(length > 0,
-            "Invalid byte array length: " + length);
+            "Invalid byte array length: %s", length);
         for (int i = 0; i < binaryDictionaryContent.length; i++) {
           // wrap the content in a Binary
           binaryDictionaryContent[i] = Binary.fromConstantByteBuffer(

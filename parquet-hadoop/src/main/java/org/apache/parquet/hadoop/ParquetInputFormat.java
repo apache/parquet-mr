@@ -347,7 +347,7 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
       // receiving ParquetInputSplit. Translation is required at some point.
       for (InputSplit split : super.getSplits(jobContext)) {
         Preconditions.checkArgument(split instanceof FileSplit,
-            "Cannot wrap non-FileSplit: " + split);
+            "Cannot wrap non-FileSplit: %s", split);
         splits.add(ParquetInputSplit.from((FileSplit) split));
       }
       return splits;

@@ -447,6 +447,14 @@ public class DictionaryFilter implements FilterPredicate.Visitor<Boolean> {
       return BLOCK_MIGHT_MATCH;
     }
 
+    boolean mayContainNull = (meta.getStatistics() == null
+      || !meta.getStatistics().isNumNullsSet()
+      || meta.getStatistics().getNumNulls() > 0);
+    // The column may contain nulls and the values set contains no null, so the row group cannot be eliminated.
+    if (mayContainNull) {
+      return BLOCK_MIGHT_MATCH;
+    }
+
     // if the chunk has non-dictionary pages, don't bother decoding the
     // dictionary because the row group can't be eliminated.
     if (hasNonDictionaryPages(meta)) {
