@@ -19,6 +19,7 @@
 
 package org.apache.parquet;
 
+import java.util.concurrent.ExecutorService;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.HeapByteBufferAllocator;
 import org.apache.parquet.compression.CompressionCodecFactory;
@@ -44,6 +45,8 @@ public class ParquetReadOptions {
   private static final int ALLOCATION_SIZE_DEFAULT = 8388608; // 8MB
   private static final boolean PAGE_VERIFY_CHECKSUM_ENABLED_DEFAULT = false;
   private static final boolean BLOOM_FILTER_ENABLED_DEFAULT = true;
+  private static final boolean ENABLE_ASYNC_IO_READER_DEFAULT = false;
+  private static final boolean ENABLE_PARALLEL_COLUMN_READER_DEFAULT = false;
 
   private final boolean useSignedStringMinMax;
   private final boolean useStatsFilter;
@@ -52,10 +55,16 @@ public class ParquetReadOptions {
   private final boolean useColumnIndexFilter;
   private final boolean usePageChecksumVerification;
   private final boolean useBloomFilter;
+  private final boolean enableAsyncIOReader;
+  private final boolean enableParallelColumnReader;
   private final FilterCompat.Filter recordFilter;
   private final ParquetMetadataConverter.MetadataFilter metadataFilter;
   private final CompressionCodecFactory codecFactory;
   private final ByteBufferAllocator allocator;
+  // Thread pool to read column chunk data from storage.
+  private final ExecutorService ioThreadPool;
+  // Thread pool to process pages for multiple columns in parallel.
+  private final ExecutorService processThreadPool;
   private final int maxAllocationSize;
   private final Map<String, String> properties;
   private final FileDecryptionProperties fileDecryptionProperties;
@@ -67,13 +76,17 @@ public class ParquetReadOptions {
                      boolean useColumnIndexFilter,
                      boolean usePageChecksumVerification,
                      boolean useBloomFilter,
+                     boolean enableAsyncIOReader,
+                     boolean enableParallelColumnReader,
                      FilterCompat.Filter recordFilter,
                      ParquetMetadataConverter.MetadataFilter metadataFilter,
                      CompressionCodecFactory codecFactory,
                      ByteBufferAllocator allocator,
                      int maxAllocationSize,
                      Map<String, String> properties,
-                     FileDecryptionProperties fileDecryptionProperties) {
+                     FileDecryptionProperties fileDecryptionProperties,
+                     ExecutorService ioThreadPool,
+                     ExecutorService processThreadPool) {
     this.useSignedStringMinMax = useSignedStringMinMax;
     this.useStatsFilter = useStatsFilter;
     this.useDictionaryFilter = useDictionaryFilter;
@@ -81,6 +94,8 @@ public class ParquetReadOptions {
     this.useColumnIndexFilter = useColumnIndexFilter;
     this.usePageChecksumVerification = usePageChecksumVerification;
     this.useBloomFilter = useBloomFilter;
+    this.enableAsyncIOReader = enableAsyncIOReader;
+    this.enableParallelColumnReader = enableParallelColumnReader;
     this.recordFilter = recordFilter;
     this.metadataFilter = metadataFilter;
     this.codecFactory = codecFactory;
@@ -88,6 +103,8 @@ public class ParquetReadOptions {
     this.maxAllocationSize = maxAllocationSize;
     this.properties = Collections.unmodifiableMap(properties);
     this.fileDecryptionProperties = fileDecryptionProperties;
+    this.ioThreadPool = ioThreadPool;
+    this.processThreadPool = processThreadPool;
   }
 
   public boolean useSignedStringMinMax() {
@@ -112,6 +129,14 @@ public class ParquetReadOptions {
 
   public boolean useBloomFilter() {
     return useBloomFilter;
+  }
+
+  public boolean isAsyncIOReaderEnabled() {
+    return enableAsyncIOReader;
+  }
+
+  public boolean isParallelColumnReaderEnabled() {
+    return enableParallelColumnReader;
   }
 
   public boolean usePageChecksumVerification() {
@@ -149,6 +174,14 @@ public class ParquetReadOptions {
   public FileDecryptionProperties getDecryptionProperties() {
     return fileDecryptionProperties;
   }
+  
+  public ExecutorService getIOThreadPool() {
+    return ioThreadPool;
+  }
+  
+  public ExecutorService getProcessThreadPool() {
+    return processThreadPool;
+  }
 
   public boolean isEnabled(String property, boolean defaultValue) {
     Optional<String> propValue = Optional.ofNullable(properties.get(property));
@@ -168,6 +201,8 @@ public class ParquetReadOptions {
     protected boolean useColumnIndexFilter = COLUMN_INDEX_FILTERING_ENABLED_DEFAULT;
     protected boolean usePageChecksumVerification = PAGE_VERIFY_CHECKSUM_ENABLED_DEFAULT;
     protected boolean useBloomFilter = BLOOM_FILTER_ENABLED_DEFAULT;
+    protected boolean enableAsyncIOReader = ENABLE_ASYNC_IO_READER_DEFAULT;
+    protected boolean enableParallelColumnReader = ENABLE_PARALLEL_COLUMN_READER_DEFAULT;
     protected FilterCompat.Filter recordFilter = null;
     protected ParquetMetadataConverter.MetadataFilter metadataFilter = NO_FILTER;
     // the page size parameter isn't used when only using the codec factory to get decompressors
@@ -176,6 +211,8 @@ public class ParquetReadOptions {
     protected int maxAllocationSize = ALLOCATION_SIZE_DEFAULT;
     protected Map<String, String> properties = new HashMap<>();
     protected FileDecryptionProperties fileDecryptionProperties = null;
+    protected ExecutorService ioThreadPool = null;
+    protected ExecutorService processThreadPool = null;
 
     public Builder useSignedStringMinMax(boolean useSignedStringMinMax) {
       this.useSignedStringMinMax = useSignedStringMinMax;
@@ -246,6 +283,16 @@ public class ParquetReadOptions {
       return this;
     }
 
+    public Builder enableAsyncIOReader(boolean enableAsyncIOReader) {
+      this.enableAsyncIOReader = enableAsyncIOReader;
+      return this;
+    }
+
+    public Builder enableParallelColumnReader(boolean enableParallelColumnReader) {
+      this.enableParallelColumnReader = enableParallelColumnReader;
+      return this;
+    }
+
     public Builder withRecordFilter(FilterCompat.Filter rowGroupFilter) {
       this.recordFilter = rowGroupFilter;
       return this;
@@ -290,6 +337,16 @@ public class ParquetReadOptions {
       this.fileDecryptionProperties = fileDecryptionProperties;
       return this;
     }
+    
+    public Builder withIOThreadPool(ExecutorService ioThreadPool) {
+      this.ioThreadPool = ioThreadPool;
+      return this;
+    }
+    
+    public Builder withProcessThreadPool(ExecutorService processThreadPool) {
+      this.processThreadPool = processThreadPool;
+      return this;
+    }
 
     public Builder set(String key, String value) {
       properties.put(key, value);
@@ -303,10 +360,14 @@ public class ParquetReadOptions {
       useRecordFilter(options.useRecordFilter);
       withRecordFilter(options.recordFilter);
       withMetadataFilter(options.metadataFilter);
+      enableAsyncIOReader(options.enableAsyncIOReader);
+      enableParallelColumnReader(options.enableParallelColumnReader);
       withCodecFactory(options.codecFactory);
       withAllocator(options.allocator);
       withPageChecksumVerification(options.usePageChecksumVerification);
       withDecryption(options.fileDecryptionProperties);
+      withIOThreadPool(options.ioThreadPool);
+      withProcessThreadPool(options.processThreadPool);
       for (Map.Entry<String, String> keyValue : options.properties.entrySet()) {
         set(keyValue.getKey(), keyValue.getValue());
       }
@@ -316,8 +377,9 @@ public class ParquetReadOptions {
     public ParquetReadOptions build() {
       return new ParquetReadOptions(
         useSignedStringMinMax, useStatsFilter, useDictionaryFilter, useRecordFilter,
-        useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, recordFilter, metadataFilter,
-        codecFactory, allocator, maxAllocationSize, properties, fileDecryptionProperties);
+        useColumnIndexFilter, usePageChecksumVerification, useBloomFilter, enableAsyncIOReader,
+        enableParallelColumnReader, recordFilter, metadataFilter, codecFactory, allocator,
+        maxAllocationSize, properties, fileDecryptionProperties, ioThreadPool, processThreadPool);
     }
   }
 }
