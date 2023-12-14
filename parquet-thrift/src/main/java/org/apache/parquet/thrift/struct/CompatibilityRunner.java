@@ -53,6 +53,7 @@ public class CompatibilityRunner {
   private static void compareJson(LinkedList<String> arguments) throws IOException {
     String oldJsonPath = arguments.pollFirst();
     String newJsonPath = arguments.pollFirst();
+    boolean allowEmptyStruct = "--allow-empty-struct".equals(arguments.pollFirst());
 
     File oldJsonFile = new File(oldJsonPath);
     checkExist(oldJsonFile);
@@ -71,9 +72,14 @@ public class CompatibilityRunner {
     }
 
     if (report.hasEmptyStruct()) {
-      System.err.println("schema contains empty struct");
-      System.err.println(report.getMessages());
-      System.exit(1);
+      if (allowEmptyStruct) {
+        System.err.println("WARNING: schema contains empty struct, but allowing because --allow-empty-struct was passed");
+        System.err.println(report.getMessages());
+      } else {
+        System.err.println("schema contains empty struct");
+        System.err.println(report.getMessages());
+        System.exit(1);
+      }
     }
 
     System.out.println("[success] schema is compatible");
