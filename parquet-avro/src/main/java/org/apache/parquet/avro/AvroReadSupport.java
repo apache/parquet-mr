@@ -44,7 +44,7 @@ public class AvroReadSupport<T> extends ReadSupport<T> {
 
   private static final Logger LOG = LoggerFactory.getLogger(AvroReadSupport.class);
 
-  public static String AVRO_REQUESTED_PROJECTION = "parquet.avro.projection";
+  public static final String AVRO_REQUESTED_PROJECTION = "parquet.avro.projection";
   private static final String AVRO_READ_SCHEMA = "parquet.avro.read.schema";
 
   static final String AVRO_SCHEMA_METADATA_KEY = "parquet.avro.schema";
@@ -52,8 +52,7 @@ public class AvroReadSupport<T> extends ReadSupport<T> {
   static final String OLD_AVRO_SCHEMA_METADATA_KEY = "avro.schema";
   private static final String AVRO_READ_SCHEMA_METADATA_KEY = "avro.read.schema";
 
-  // TODO: for 2.0.0, make this final (breaking change)
-  public static String AVRO_DATA_SUPPLIER = "parquet.avro.data.supplier";
+  public static final String AVRO_DATA_SUPPLIER = "parquet.avro.data.supplier";
 
   public static final String AVRO_COMPATIBILITY = "parquet.avro.compatible";
   public static final boolean AVRO_DEFAULT_COMPATIBILITY = true;

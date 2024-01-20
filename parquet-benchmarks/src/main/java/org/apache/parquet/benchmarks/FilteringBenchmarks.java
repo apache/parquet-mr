@@ -307,7 +307,7 @@ public class FilteringBenchmarks {
         .as(stringType())
         .named("dummy5_col")
         .named("schema");
-    public static LongColumn COLUMN = FilterApi.longColumn("int64_col");
+    public static final LongColumn COLUMN = FilterApi.longColumn("int64_col");
     private Path file;
     private Random random;
     private StringGenerator dummyGenerator;
