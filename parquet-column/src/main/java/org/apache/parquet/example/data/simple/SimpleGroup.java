@@ -60,7 +60,7 @@ public class SimpleGroup extends Group {
             builder.append('\n');
             ((SimpleGroup) value).appendToString(builder, indent + "  ");
           } else {
-            builder.append(": ").append(value.toString()).append('\n');
+            builder.append(": ").append(value).append('\n');
           }
         }
       }
@@ -79,6 +79,32 @@ public class SimpleGroup extends Group {
     SimpleGroup g = new SimpleGroup(schema.getType(fieldIndex).asGroupType());
     add(fieldIndex, g);
     return g;
+  }
+
+  public Object getObject(String field, int index) {
+    return getObject(getType().getFieldIndex(field), index);
+  }
+
+  public Object getObject(int fieldIndex, int index) {
+    Object wrapped = getValue(fieldIndex, index);
+    // Unwrap to Java standard object, if possible
+    if (wrapped instanceof BooleanValue) {
+      return ((BooleanValue) wrapped).getBoolean();
+    } else if (wrapped instanceof IntegerValue) {
+      return ((IntegerValue) wrapped).getInteger();
+    } else if (wrapped instanceof LongValue) {
+      return ((LongValue) wrapped).getLong();
+    } else if (wrapped instanceof Int96Value) {
+      return ((Int96Value) wrapped).getInt96();
+    } else if (wrapped instanceof FloatValue) {
+      return ((FloatValue) wrapped).getFloat();
+    } else if (wrapped instanceof DoubleValue) {
+      return ((DoubleValue) wrapped).getDouble();
+    } else if (wrapped instanceof BinaryValue) {
+      return ((BinaryValue) wrapped).getBinary();
+    } else {
+      return wrapped;
+    }
   }
 
   @Override

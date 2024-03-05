@@ -31,7 +31,10 @@ import org.apache.parquet.column.page.DictionaryPage;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.column.values.bitpacking.ByteBitPackingValuesReader;
 import org.apache.parquet.column.values.bytestreamsplit.ByteStreamSplitValuesReaderForDouble;
+import org.apache.parquet.column.values.bytestreamsplit.ByteStreamSplitValuesReaderForFLBA;
 import org.apache.parquet.column.values.bytestreamsplit.ByteStreamSplitValuesReaderForFloat;
+import org.apache.parquet.column.values.bytestreamsplit.ByteStreamSplitValuesReaderForInteger;
+import org.apache.parquet.column.values.bytestreamsplit.ByteStreamSplitValuesReaderForLong;
 import org.apache.parquet.column.values.delta.DeltaBinaryPackingValuesReader;
 import org.apache.parquet.column.values.deltalengthbytearray.DeltaLengthByteArrayValuesReader;
 import org.apache.parquet.column.values.deltastrings.DeltaByteArrayReader;
@@ -129,6 +132,12 @@ public enum Encoding {
           return new ByteStreamSplitValuesReaderForFloat();
         case DOUBLE:
           return new ByteStreamSplitValuesReaderForDouble();
+        case INT32:
+          return new ByteStreamSplitValuesReaderForInteger();
+        case INT64:
+          return new ByteStreamSplitValuesReaderForLong();
+        case FIXED_LEN_BYTE_ARRAY:
+          return new ByteStreamSplitValuesReaderForFLBA(descriptor.getTypeLength());
         default:
           throw new ParquetDecodingException("no byte stream split reader for type " + descriptor.getType());
       }

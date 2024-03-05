@@ -32,10 +32,18 @@ import org.apache.parquet.column.values.deltastrings.DeltaByteArrayWriter;
 import org.apache.parquet.column.values.plain.FixedLenByteArrayPlainValuesWriter;
 import org.apache.parquet.column.values.plain.PlainValuesWriter;
 import org.apache.parquet.column.values.rle.RunLengthBitPackingHybridValuesWriter;
+import org.apache.parquet.schema.LogicalTypeAnnotation;
 
 public class DefaultV2ValuesWriterFactory implements ValuesWriterFactory {
 
   private ParquetProperties parquetProperties;
+
+  private static boolean logicalTypeMatches(ColumnDescriptor descriptor, Class<?>... classes) {
+    for (Class cls : classes) {
+      if (cls.isInstance(descriptor.getPrimitiveType().getLogicalTypeAnnotation())) return true;
+    }
+    return false;
+  }
 
   @Override
   public void initialize(ParquetProperties properties) {
@@ -84,10 +92,25 @@ public class DefaultV2ValuesWriterFactory implements ValuesWriterFactory {
   }
 
   private ValuesWriter getFixedLenByteArrayValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new DeltaByteArrayWriter(
-        parquetProperties.getInitialSlabSize(),
-        parquetProperties.getPageSizeThreshold(),
-        parquetProperties.getAllocator());
+    final ValuesWriter fallbackWriter;
+    // Heuristic: enable BYTE_STREAM_SPLIT for DECIMAL and FLOAT16 columns.
+    final boolean useByteStreamSplit = parquetProperties.isExtendedByteStreamSplitEnabled()
+        && logicalTypeMatches(
+            path,
+            LogicalTypeAnnotation.DecimalLogicalTypeAnnotation.class,
+            LogicalTypeAnnotation.Float16LogicalTypeAnnotation.class);
+    if (useByteStreamSplit) {
+      fallbackWriter = new ByteStreamSplitValuesWriter.FixedLenByteArrayByteStreamSplitValuesWriter(
+          path.getTypeLength(),
+          parquetProperties.getInitialSlabSize(),
+          parquetProperties.getPageSizeThreshold(),
+          parquetProperties.getAllocator());
+    } else {
+      fallbackWriter = new DeltaByteArrayWriter(
+          parquetProperties.getInitialSlabSize(),
+          parquetProperties.getPageSizeThreshold(),
+          parquetProperties.getAllocator());
+    }
     return DefaultValuesWriterFactory.dictWriterWithFallBack(
         path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }
@@ -102,19 +125,39 @@ public class DefaultV2ValuesWriterFactory implements ValuesWriterFactory {
   }
 
   private ValuesWriter getInt32ValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new DeltaBinaryPackingValuesWriterForInteger(
-        parquetProperties.getInitialSlabSize(),
-        parquetProperties.getPageSizeThreshold(),
-        parquetProperties.getAllocator());
+    final ValuesWriter fallbackWriter;
+    // Ideally we should only enable BYTE_STREAM_SPLIT if compression is enabled for this column.
+    // However, this information is not available here.
+    if (parquetProperties.isExtendedByteStreamSplitEnabled()) {
+      fallbackWriter = new ByteStreamSplitValuesWriter.IntegerByteStreamSplitValuesWriter(
+          parquetProperties.getInitialSlabSize(),
+          parquetProperties.getPageSizeThreshold(),
+          parquetProperties.getAllocator());
+    } else {
+      fallbackWriter = new DeltaBinaryPackingValuesWriterForInteger(
+          parquetProperties.getInitialSlabSize(),
+          parquetProperties.getPageSizeThreshold(),
+          parquetProperties.getAllocator());
+    }
     return DefaultValuesWriterFactory.dictWriterWithFallBack(
         path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }
 
   private ValuesWriter getInt64ValuesWriter(ColumnDescriptor path) {
-    ValuesWriter fallbackWriter = new DeltaBinaryPackingValuesWriterForLong(
-        parquetProperties.getInitialSlabSize(),
-        parquetProperties.getPageSizeThreshold(),
-        parquetProperties.getAllocator());
+    final ValuesWriter fallbackWriter;
+    // Ideally we should only enable BYTE_STREAM_SPLIT if compression is enabled for this column.
+    // However, this information is not available here.
+    if (parquetProperties.isExtendedByteStreamSplitEnabled()) {
+      fallbackWriter = new ByteStreamSplitValuesWriter.LongByteStreamSplitValuesWriter(
+          parquetProperties.getInitialSlabSize(),
+          parquetProperties.getPageSizeThreshold(),
+          parquetProperties.getAllocator());
+    } else {
+      fallbackWriter = new DeltaBinaryPackingValuesWriterForLong(
+          parquetProperties.getInitialSlabSize(),
+          parquetProperties.getPageSizeThreshold(),
+          parquetProperties.getAllocator());
+    }
     return DefaultValuesWriterFactory.dictWriterWithFallBack(
         path, parquetProperties, getEncodingForDictionaryPage(), getEncodingForDataPage(), fallbackWriter);
   }

@@ -50,6 +50,7 @@ public class ParquetProperties {
   public static final int DEFAULT_DICTIONARY_PAGE_SIZE = DEFAULT_PAGE_SIZE;
   public static final boolean DEFAULT_IS_DICTIONARY_ENABLED = true;
   public static final boolean DEFAULT_IS_BYTE_STREAM_SPLIT_ENABLED = false;
+  public static final boolean DEFAULT_IS_EXTENDED_BYTE_STREAM_SPLIT_ENABLED = false;
   public static final WriterVersion DEFAULT_WRITER_VERSION = WriterVersion.PARQUET_1_0;
   public static final boolean DEFAULT_ESTIMATE_ROW_COUNT_FOR_PAGE_SIZE_CHECK = true;
   public static final int DEFAULT_MINIMUM_RECORD_COUNT_FOR_CHECK = 100;
@@ -115,6 +116,7 @@ public class ParquetProperties {
   private final int pageRowCountLimit;
   private final boolean pageWriteChecksumEnabled;
   private final boolean enableByteStreamSplit;
+  private final boolean enableExtendedByteStreamSplit;
   private final Map<String, String> extraMetaData;
 
   private ParquetProperties(Builder builder) {
@@ -142,6 +144,7 @@ public class ParquetProperties {
     this.pageRowCountLimit = builder.pageRowCountLimit;
     this.pageWriteChecksumEnabled = builder.pageWriteChecksumEnabled;
     this.enableByteStreamSplit = builder.enableByteStreamSplit;
+    this.enableExtendedByteStreamSplit = builder.enableExtendedByteStreamSplit;
     this.extraMetaData = builder.extraMetaData;
   }
 
@@ -210,6 +213,10 @@ public class ParquetProperties {
 
   public boolean isByteStreamSplitEnabled() {
     return enableByteStreamSplit;
+  }
+
+  public boolean isExtendedByteStreamSplitEnabled() {
+    return enableExtendedByteStreamSplit;
   }
 
   public ByteBufferAllocator getAllocator() {
@@ -350,6 +357,7 @@ public class ParquetProperties {
     private int pageRowCountLimit = DEFAULT_PAGE_ROW_COUNT_LIMIT;
     private boolean pageWriteChecksumEnabled = DEFAULT_PAGE_WRITE_CHECKSUM_ENABLED;
     private boolean enableByteStreamSplit = DEFAULT_IS_BYTE_STREAM_SPLIT_ENABLED;
+    private boolean enableExtendedByteStreamSplit = DEFAULT_IS_EXTENDED_BYTE_STREAM_SPLIT_ENABLED;
     private Map<String, String> extraMetaData = new HashMap<>();
 
     private Builder() {
@@ -382,6 +390,7 @@ public class ParquetProperties {
       this.numBloomFilterCandidates = ColumnProperty.<Integer>builder(toCopy.numBloomFilterCandidates);
       this.maxBloomFilterBytes = toCopy.maxBloomFilterBytes;
       this.enableByteStreamSplit = toCopy.enableByteStreamSplit;
+      this.enableExtendedByteStreamSplit = toCopy.enableExtendedByteStreamSplit;
       this.extraMetaData = toCopy.extraMetaData;
     }
 
@@ -420,8 +429,27 @@ public class ParquetProperties {
       return this;
     }
 
-    public Builder withByteStreamSplitEncoding(boolean enableByteStreamSplit) {
-      this.enableByteStreamSplit = enableByteStreamSplit;
+    /**
+     * Enable or disable BYTE_STREAM_SPLIT encoding for FLOAT and DOUBLE columns.
+     *
+     * @param enable whether BYTE_STREAM_SPLIT encoding should be enabled
+     * @return this builder for method chaining.
+     */
+    public Builder withByteStreamSplitEncoding(boolean enable) {
+      this.enableByteStreamSplit = enable;
+      this.enableExtendedByteStreamSplit &= enable;
+      return this;
+    }
+
+    /**
+     * Enable or disable BYTE_STREAM_SPLIT encoding for FLOAT, DOUBLE, INT32, INT64 and FIXED_LEN_BYTE_ARRAY columns.
+     *
+     * @param enable whether BYTE_STREAM_SPLIT encoding should be enabled
+     * @return this builder for method chaining.
+     */
+    public Builder withExtendedByteStreamSplitEncoding(boolean enable) {
+      this.enableByteStreamSplit |= enable;
+      this.enableExtendedByteStreamSplit = enable;
       return this;
     }
 

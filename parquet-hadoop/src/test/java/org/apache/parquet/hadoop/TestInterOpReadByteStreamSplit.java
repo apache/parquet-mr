@@ -20,18 +20,23 @@
 package org.apache.parquet.hadoop;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.example.data.Group;
+import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.junit.Test;
 
 public class TestInterOpReadByteStreamSplit {
-  private InterOpTester interop = new InterOpTester();
   private static final String FLOATS_FILE = "byte_stream_split.zstd.parquet";
-  private static final String CHANGESET = "4cb3cff";
+  private static final String EXTENDED_FILE = "byte_stream_split_extended.gzip.parquet";
+  // FIXME after https://github.com/apache/parquet-testing/pull/46 is merged
+  private static final String CHANGESET = "74278bc";
+  private final InterOpTester interop = new InterOpTester();
 
   @Test
   public void testReadFloats() throws IOException {
@@ -42,7 +47,7 @@ public class TestInterOpReadByteStreamSplit {
         ParquetReader.builder(new GroupReadSupport(), floatsFile).build()) {
       for (int i = 0; i < expectRows; ++i) {
         Group group = reader.read();
-        assertTrue(group != null);
+        assertNotNull(group);
         float fval = group.getFloat("f32", 0);
         double dval = group.getDouble("f64", 0);
         // Values are from the normal distribution
@@ -67,7 +72,34 @@ public class TestInterOpReadByteStreamSplit {
             break;
         }
       }
-      assertTrue(reader.read() == null);
+      assertNull(reader.read());
     }
+  }
+
+  private void compareColumnValues(Path path, int expectRows, String leftCol, String rightCol) throws IOException {
+    try (ParquetReader<Group> reader =
+        ParquetReader.builder(new GroupReadSupport(), path).build()) {
+      for (int i = 0; i < expectRows; ++i) {
+        SimpleGroup group = (SimpleGroup) reader.read();
+        assertNotNull(group);
+        Object left = group.getObject(leftCol, 0);
+        Object right = group.getObject(rightCol, 0);
+        assertEquals(left, right);
+      }
+      assertNull(reader.read());
+    }
+  }
+
+  @Test
+  public void testReadAllSupportedTypes() throws IOException {
+    Path extendedFile = interop.GetInterOpFile(EXTENDED_FILE, CHANGESET);
+    final int expectRows = 200;
+    compareColumnValues(extendedFile, expectRows, "float_plain", "float_byte_stream_split");
+    compareColumnValues(extendedFile, expectRows, "double_plain", "double_byte_stream_split");
+    compareColumnValues(extendedFile, expectRows, "int32_plain", "int32_byte_stream_split");
+    compareColumnValues(extendedFile, expectRows, "int64_plain", "int64_byte_stream_split");
+    compareColumnValues(extendedFile, expectRows, "float16_plain", "float16_byte_stream_split");
+    compareColumnValues(extendedFile, expectRows, "flba5_plain", "flba5_byte_stream_split");
+    compareColumnValues(extendedFile, expectRows, "decimal_plain", "decimal_byte_stream_split");
   }
 }
