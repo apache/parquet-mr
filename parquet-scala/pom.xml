@@ -67,7 +67,7 @@
     <dependency>
       <groupId>org.scalactic</groupId>
       <artifactId>scalactic_${scala.binary.version}</artifactId>
-      <version>3.0.1</version>
+      <version>3.2.18</version>
       <scope>test</scope>
     </dependency>
     <dependency>
