@@ -81,7 +81,53 @@ public class TestColumnReaderImpl {
     }
     assertEquals(rows, rowCount);
     assertEquals(rows, valueCount);
-    MemPageReader pageReader = new MemPageReader(rows, pages.iterator(), pageWriter.getDictionaryPage());
+    MemPageReader pageReader = new MemPageReader(rows, pages.iterator(), pageWriter.getDictionaryPage(), true);
+    ValidatingConverter converter = new ValidatingConverter();
+    ColumnReader columnReader =
+        new ColumnReaderImpl(col, pageReader, converter, VersionParser.parse(Version.FULL_VERSION));
+    for (int i = 0; i < rows; i++) {
+      assertEquals(0, columnReader.getCurrentRepetitionLevel());
+      assertEquals(0, columnReader.getCurrentDefinitionLevel());
+      columnReader.writeCurrentValueToConverter();
+      columnReader.consume();
+    }
+    assertEquals(rows, converter.count);
+  }
+
+  @Test
+  public void testLazy() throws Exception {
+    // Write test data
+    MessageType schema = MessageTypeParser.parseMessageType("message test { required binary foo; }");
+    ColumnDescriptor col = schema.getColumns().get(0);
+    MemPageWriter pageWriter = new MemPageWriter();
+    ColumnWriterV2 columnWriterV2 = new ColumnWriterV2(
+        col,
+        pageWriter,
+        ParquetProperties.builder()
+            .withDictionaryPageSize(1024)
+            .withWriterVersion(PARQUET_2_0)
+            .withPageSize(2048)
+            .build());
+    for (int i = 0; i < rows; i++) {
+      columnWriterV2.write(Binary.fromString("bar" + i % 10), 0, 0);
+      if ((i + 1) % 1000 == 0) {
+        columnWriterV2.writePage();
+      }
+    }
+    columnWriterV2.writePage();
+    columnWriterV2.finalizeColumnChunk();
+    List<DataPage> pages = pageWriter.getPages();
+    int valueCount = 0;
+    int rowCount = 0;
+    for (DataPage dataPage : pages) {
+      valueCount += dataPage.getValueCount();
+      rowCount += ((DataPageV2) dataPage).getRowCount();
+    }
+    assertEquals(rows, rowCount);
+    assertEquals(rows, valueCount);
+
+    // Read lazily
+    MemPageReader pageReader = new MemPageReader(rows, pages.iterator(), pageWriter.getDictionaryPage(), false);
     ValidatingConverter converter = new ValidatingConverter();
     ColumnReader columnReader =
         new ColumnReaderImpl(col, pageReader, converter, VersionParser.parse(Version.FULL_VERSION));
@@ -124,7 +170,7 @@ public class TestColumnReaderImpl {
     }
     assertEquals(rows, rowCount);
     assertEquals(rows, valueCount);
-    MemPageReader pageReader = new MemPageReader(rows, pages.iterator(), pageWriter.getDictionaryPage());
+    MemPageReader pageReader = new MemPageReader(rows, pages.iterator(), pageWriter.getDictionaryPage(), true);
     ValidatingConverter converter = new ValidatingConverter();
     ColumnReader columnReader =
         new ColumnReaderImpl(col, pageReader, converter, VersionParser.parse(Version.FULL_VERSION));

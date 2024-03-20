@@ -142,21 +142,32 @@ public class TestParquetReader {
   }
 
   private List<PhoneBookWriter.User> readUsers(
-      FilterCompat.Filter filter, boolean useOtherFiltering, boolean useColumnIndexFilter) throws IOException {
-    return readUsers(filter, useOtherFiltering, useColumnIndexFilter, 0, this.fileSize);
+      FilterCompat.Filter filter,
+      boolean useOtherFiltering,
+      boolean useColumnIndexFilter,
+      boolean materializeRowGroup)
+      throws IOException {
+    return readUsers(filter, useOtherFiltering, useColumnIndexFilter, materializeRowGroup, 0, this.fileSize);
   }
 
   private List<PhoneBookWriter.User> readUsers(
       FilterCompat.Filter filter,
       boolean useOtherFiltering,
       boolean useColumnIndexFilter,
+      boolean materializeRowGroup,
       long rangeStart,
       long rangeEnd)
       throws IOException {
+    Configuration conf = new Configuration();
+    if (!materializeRowGroup) {
+      // @Todo parameterize this value?
+      conf.setInt(ParquetInputFormat.COLUMN_CHUNK_BUFFER_SIZE, 25);
+    }
     return PhoneBookWriter.readUsers(
         ParquetReader.builder(new GroupReadSupport(), file)
             .withAllocator(allocator)
             .withFilter(filter)
+            .withConf(conf)
             .useDictionaryFilter(useOtherFiltering)
             .useStatsFilter(useOtherFiltering)
             .useRecordFilter(useOtherFiltering)
@@ -200,10 +211,19 @@ public class TestParquetReader {
   @Test
   public void testRangeFiltering() throws Exception {
     // The readUsers also validates the rowIndex for each returned row.
-    readUsers(FilterCompat.NOOP, false, false, this.fileSize / 2, this.fileSize);
-    readUsers(FilterCompat.NOOP, true, false, this.fileSize / 3, this.fileSize * 3 / 4);
-    readUsers(FilterCompat.NOOP, false, true, this.fileSize / 4, this.fileSize / 2);
-    readUsers(FilterCompat.NOOP, true, true, this.fileSize * 3 / 4, this.fileSize);
+    readUsers(FilterCompat.NOOP, false, false, true, this.fileSize / 2, this.fileSize);
+    readUsers(FilterCompat.NOOP, true, false, true, this.fileSize / 3, this.fileSize * 3 / 4);
+    readUsers(FilterCompat.NOOP, false, true, true, this.fileSize / 4, this.fileSize / 2);
+    readUsers(FilterCompat.NOOP, true, true, true, this.fileSize * 3 / 4, this.fileSize);
+  }
+
+  @Test
+  public void testRangeFilteringLazy() throws Exception {
+    // The readUsers also validates the rowIndex for each returned row.
+    readUsers(FilterCompat.NOOP, false, false, false, this.fileSize / 2, this.fileSize);
+    readUsers(FilterCompat.NOOP, true, false, false, this.fileSize / 3, this.fileSize * 3 / 4);
+    readUsers(FilterCompat.NOOP, false, true, false, this.fileSize / 4, this.fileSize / 2);
+    readUsers(FilterCompat.NOOP, true, true, false, this.fileSize * 3 / 4, this.fileSize);
   }
 
   @Test
@@ -213,21 +233,46 @@ public class TestParquetReader {
     idSet.add(567l);
     // The readUsers also validates the rowIndex for each returned row.
     List<PhoneBookWriter.User> filteredUsers1 =
-        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), true, true);
+        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), true, true, true);
     assertEquals(filteredUsers1.size(), 2L);
     List<PhoneBookWriter.User> filteredUsers2 =
-        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), true, false);
+        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), true, false, true);
     assertEquals(filteredUsers2.size(), 2L);
     List<PhoneBookWriter.User> filteredUsers3 =
-        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), false, false);
+        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), false, false, true);
+    assertEquals(filteredUsers3.size(), 1000L);
+  }
+
+  @Test
+  public void testSimpleFilteringLazy() throws Exception {
+    Set<Long> idSet = new HashSet<>();
+    idSet.add(123l);
+    idSet.add(567l);
+    // The readUsers also validates the rowIndex for each returned row.
+    List<PhoneBookWriter.User> filteredUsers1 =
+        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), true, true, false);
+    assertEquals(filteredUsers1.size(), 2L);
+    List<PhoneBookWriter.User> filteredUsers2 =
+        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), true, false, false);
+    assertEquals(filteredUsers2.size(), 2L);
+    List<PhoneBookWriter.User> filteredUsers3 =
+        readUsers(FilterCompat.get(in(longColumn("id"), idSet)), false, false, false);
     assertEquals(filteredUsers3.size(), 1000L);
   }
 
   @Test
   public void testNoFiltering() throws Exception {
-    assertEquals(DATA, readUsers(FilterCompat.NOOP, false, false));
-    assertEquals(DATA, readUsers(FilterCompat.NOOP, true, false));
-    assertEquals(DATA, readUsers(FilterCompat.NOOP, false, true));
-    assertEquals(DATA, readUsers(FilterCompat.NOOP, true, true));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, false, false, true));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, true, false, true));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, false, true, true));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, true, true, true));
+  }
+
+  @Test
+  public void testNoFilteringLazy() throws Exception {
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, false, false, false));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, true, false, false));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, false, true, false));
+    assertEquals(DATA, readUsers(FilterCompat.NOOP, true, true, false));
   }
 }

@@ -44,6 +44,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -65,6 +66,7 @@ import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.bytes.ByteBufferInputStream;
 import org.apache.parquet.bytes.ByteBufferReleaser;
 import org.apache.parquet.bytes.BytesInput;
+import org.apache.parquet.bytes.LazyByteBufferInputStream;
 import org.apache.parquet.bytes.ReusingByteBufferAllocator;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.page.DataPage;
@@ -72,6 +74,7 @@ import org.apache.parquet.column.page.DataPageV1;
 import org.apache.parquet.column.page.DataPageV2;
 import org.apache.parquet.column.page.DictionaryPage;
 import org.apache.parquet.column.page.DictionaryPageReadStore;
+import org.apache.parquet.column.page.Page;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.column.values.bloomfilter.BlockSplitBloomFilter;
 import org.apache.parquet.column.values.bloomfilter.BloomFilter;
@@ -91,6 +94,7 @@ import org.apache.parquet.format.DataPageHeaderV2;
 import org.apache.parquet.format.DictionaryPageHeader;
 import org.apache.parquet.format.FileCryptoMetaData;
 import org.apache.parquet.format.PageHeader;
+import org.apache.parquet.format.PageType;
 import org.apache.parquet.format.Util;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
 import org.apache.parquet.format.converter.ParquetMetadataConverter.MetadataFilter;
@@ -1090,10 +1094,14 @@ public class ParquetFileReader implements Closeable {
       }
     }
     // actually read all the chunks
+    final ParquetFileStream parquetFileStream = new ParquetFileStream(currentParts.chunks);
+
     ChunkListBuilder builder = new ChunkListBuilder(block.getRowCount());
+
     for (ConsecutivePartList consecutiveChunks : allParts) {
-      consecutiveChunks.readAll(f, builder);
+      consecutiveChunks.readAll(parquetFileStream, builder);
     }
+
     rowGroup.setReleaser(builder.releaser);
     for (Chunk chunk : builder.build()) {
       readChunkPages(chunk, block, rowGroup);
@@ -1249,8 +1257,9 @@ public class ParquetFileReader implements Closeable {
       }
     }
     // actually read all the chunks
+    final ParquetFileStream parquetFileStream = new ParquetFileStream(currentParts.chunks);
     for (ConsecutivePartList consecutiveChunks : allParts) {
-      consecutiveChunks.readAll(f, builder);
+      consecutiveChunks.readAll(parquetFileStream, builder);
     }
     rowGroup.setReleaser(builder.releaser);
     for (Chunk chunk : builder.build()) {
@@ -1612,13 +1621,262 @@ public class ParquetFileReader implements Closeable {
     }
   }
 
+  private class PageWithHeader {
+    final Page page;
+    final PageHeader header;
+
+    public PageWithHeader(PageHeader header, Page page) {
+      this.page = page;
+      this.header = header;
+    }
+  }
+
+  abstract class ChunkStream<CombinatorT, StreamT extends InputStream> {
+    private StreamT stream;
+
+    StreamT getStream() {
+      if (stream == null) {
+        try {
+          this.stream = computeStream();
+        } catch (IOException e) {
+          throw new ParquetDecodingException("Failed to initialize ParquetFileStream", e);
+        }
+      }
+      return this.stream;
+    }
+
+    abstract StreamT computeStream() throws IOException;
+
+    abstract List<ByteBuffer> sliceBuffers(int len) throws IOException;
+
+    abstract CombinatorT getCombinator();
+
+    // @Todo clean up typing/generic type casting...
+    abstract void combine(ChunkStream<?, ?> other);
+
+    PageWithHeader readNextPage(
+        Chunk chunk, PrimitiveType type, BlockCipher.Decryptor blockDecryptor, byte[] pageHeaderAAD)
+        throws IOException {
+      final PageHeader pageHeader = chunk.readPageHeader(blockDecryptor, pageHeaderAAD);
+
+      final int uncompressedPageSize = pageHeader.getUncompressed_page_size();
+      final int compressedPageSize = pageHeader.getCompressed_page_size();
+      Page page;
+      switch (pageHeader.type) {
+        case DATA_PAGE:
+          DataPageHeader dataHeaderV1 = pageHeader.getData_page_header();
+          final BytesInput pageV1Bytes = chunk.readAsBytesInput(pageHeader.compressed_page_size);
+          if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
+            verifyCrc(
+                pageHeader.getCrc(),
+                pageV1Bytes,
+                "could not verify page integrity, CRC checksum verification failed");
+          }
+          page = new DataPageV1(
+              pageV1Bytes,
+              dataHeaderV1.getNum_values(),
+              uncompressedPageSize,
+              converter.fromParquetStatistics(
+                  getFileMetaData().getCreatedBy(), dataHeaderV1.getStatistics(), type),
+              converter.getEncoding(dataHeaderV1.getRepetition_level_encoding()),
+              converter.getEncoding(dataHeaderV1.getDefinition_level_encoding()),
+              converter.getEncoding(dataHeaderV1.getEncoding()));
+          break;
+        case DATA_PAGE_V2:
+          DataPageHeaderV2 dataHeaderV2 = pageHeader.getData_page_header_v2();
+          int dataSize = compressedPageSize
+              - dataHeaderV2.getRepetition_levels_byte_length()
+              - dataHeaderV2.getDefinition_levels_byte_length();
+          final BytesInput repetitionLevels =
+              chunk.readAsBytesInput(dataHeaderV2.getRepetition_levels_byte_length());
+          final BytesInput definitionLevels =
+              chunk.readAsBytesInput(dataHeaderV2.getDefinition_levels_byte_length());
+          final BytesInput values = chunk.readAsBytesInput(dataSize);
+          final BytesInput pageV2Bytes;
+          if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
+            pageV2Bytes = BytesInput.concat(repetitionLevels, definitionLevels, values);
+            verifyCrc(
+                pageHeader.getCrc(),
+                pageV2Bytes,
+                "could not verify page integrity, CRC checksum verification failed");
+          }
+
+          page = new DataPageV2(
+              dataHeaderV2.getNum_rows(),
+              dataHeaderV2.getNum_nulls(),
+              dataHeaderV2.getNum_values(),
+              repetitionLevels,
+              definitionLevels,
+              converter.getEncoding(dataHeaderV2.getEncoding()),
+              values,
+              uncompressedPageSize,
+              converter.fromParquetStatistics(
+                  getFileMetaData().getCreatedBy(), dataHeaderV2.getStatistics(), type),
+              dataHeaderV2.isIs_compressed());
+          break;
+        case DICTIONARY_PAGE:
+          final BytesInput dictPageBytes = chunk.readAsBytesInput(compressedPageSize);
+          if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
+            verifyCrc(
+                pageHeader.getCrc(),
+                dictPageBytes,
+                "could not verify dictionary page integrity, CRC checksum verification failed");
+          }
+          final DictionaryPageHeader dicHeader = pageHeader.getDictionary_page_header();
+          page = new DictionaryPage(
+              dictPageBytes,
+              uncompressedPageSize,
+              dicHeader.getNum_values(),
+              converter.getEncoding(dicHeader.getEncoding()));
+          break;
+        default:
+          LOG.debug("skipping page of type {} of size {}", pageHeader.getType(), compressedPageSize);
+          stream.skip(compressedPageSize);
+          page = null;
+      }
+
+      if (page != null) {
+        // Copy crc to new page, used for testing
+        if (pageHeader.isSetCrc()) {
+          page.setCrc(pageHeader.getCrc());
+        }
+      }
+
+      return new PageWithHeader(pageHeader, page);
+    }
+  }
+
+  class ParquetFileStream {
+    final List<ChunkDescriptor> chunkDescriptors;
+
+    ParquetFileStream(List<ChunkDescriptor> chunkDescriptors) {
+      this.chunkDescriptors = chunkDescriptors;
+    }
+
+    void createEagerChunkStream(ChunkListBuilder builder, long offset, long length) throws IOException {
+      f.seek(offset);
+
+      int fullAllocations = Math.toIntExact(length / options.getMaxAllocationSize());
+      int lastAllocationSize = Math.toIntExact(length % options.getMaxAllocationSize());
+
+      int numAllocations = fullAllocations + (lastAllocationSize > 0 ? 1 : 0);
+      List<ByteBuffer> buffers = new ArrayList<>(numAllocations);
+
+      for (int i = 0; i < fullAllocations; i += 1) {
+        buffers.add(options.getAllocator().allocate(options.getMaxAllocationSize()));
+      }
+
+      if (lastAllocationSize > 0) {
+        buffers.add(options.getAllocator().allocate(lastAllocationSize));
+      }
+
+      builder.addBuffersToRelease(buffers);
+
+      long readStart = System.nanoTime();
+      for (ByteBuffer buffer : buffers) {
+        f.readFully(buffer);
+        buffer.flip();
+      }
+
+      ParquetMetricsCallback metricsCallback = options.getMetricsCallback();
+      if (metricsCallback != null) {
+        long totalFileReadTimeNs = Math.max(System.nanoTime() - readStart, 0);
+        double sizeInMb = ((double) length) / (1024 * 1024);
+        double timeInSec = ((double) totalFileReadTimeNs) / 1000_0000_0000L;
+        double throughput = sizeInMb / timeInSec;
+        LOG.debug(
+            "Parquet: File Read stats:  Length: {} MB, Time: {} secs, throughput: {} MB/sec ",
+            sizeInMb,
+            timeInSec,
+            throughput);
+        metricsCallback.setDuration(ParquetFileReaderMetrics.ReadTime.name(), totalFileReadTimeNs);
+        metricsCallback.setValueLong(ParquetFileReaderMetrics.ReadSize.name(), length);
+        metricsCallback.setValueDouble(ParquetFileReaderMetrics.ReadThroughput.name(), throughput);
+      }
+      final ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffers);
+      for (final ChunkDescriptor descriptor : chunkDescriptors) {
+        final List<ByteBuffer> chunkBuffers = stream.sliceBuffers(descriptor.size);
+        builder.add(
+            descriptor,
+            new ChunkStream<List<ByteBuffer>, ByteBufferInputStream>() {
+              @Override
+              ByteBufferInputStream computeStream() {
+                return ByteBufferInputStream.wrap(chunkBuffers);
+              }
+
+              @Override
+              List<ByteBuffer> sliceBuffers(int len) throws IOException {
+                return getStream().sliceBuffers(len);
+              }
+
+              @Override
+              List<ByteBuffer> getCombinator() {
+                return chunkBuffers;
+              }
+
+              @Override
+              void combine(ChunkStream<?, ?> other) {
+                chunkBuffers.addAll((List<ByteBuffer>) other.getCombinator());
+              }
+            },
+            f);
+      }
+    }
+
+    // @Todo: how to implement read metrics for lazy reads?
+    void createLazyChunkStream(ChunkListBuilder builder, int bufferSizeBytes) throws IOException {
+      for (final ChunkDescriptor descriptor : chunkDescriptors) {
+        builder.add(
+            descriptor,
+            new ChunkStream<Long, LazyByteBufferInputStream>() {
+              private Long chunkLength = descriptor.size;
+
+              @Override
+              LazyByteBufferInputStream computeStream() throws IOException {
+                final LazyByteBufferInputStream stream = LazyByteBufferInputStream.wrap(
+                    f, options.getAllocator(), descriptor.fileOffset, chunkLength, bufferSizeBytes);
+                builder.addBuffersToRelease(Collections.singletonList(stream.getDelegate()));
+                return stream;
+              }
+
+              @Override
+              List<ByteBuffer> sliceBuffers(int len) throws IOException {
+                return getStream().sliceBuffers(len);
+              }
+
+              @Override
+              Long getCombinator() {
+                return chunkLength;
+              }
+
+              @Override
+              void combine(ChunkStream<?, ?> other) {
+                this.chunkLength += (Long) other.getCombinator();
+              }
+            },
+            f);
+      }
+    }
+  }
+
+  private void verifyCrc(int referenceCrc, BytesInput bytes, String exceptionMsg) {
+    crc.reset();
+    try (ByteBufferReleaser releaser = crcAllocator.getReleaser()) {
+      crc.update(bytes.toByteBuffer(releaser));
+    }
+    if (crc.getValue() != ((long) referenceCrc & 0xffffffffL)) {
+      throw new ParquetDecodingException(exceptionMsg);
+    }
+  }
+
   /*
    * Builder to concatenate the buffers of the discontinuous parts for the same column. These parts are generated as a
    * result of the column-index based filtering when some pages might be skipped at reading.
    */
   private class ChunkListBuilder {
+
     private class ChunkData {
-      final List<ByteBuffer> buffers = new ArrayList<>();
+      ChunkStream<?, ?> stream;
       OffsetIndex offsetIndex;
     }
 
@@ -1632,8 +1890,15 @@ public class ParquetFileReader implements Closeable {
       this.rowCount = rowCount;
     }
 
-    void add(ChunkDescriptor descriptor, List<ByteBuffer> buffers, SeekableInputStream f) {
-      map.computeIfAbsent(descriptor, d -> new ChunkData()).buffers.addAll(buffers);
+    void add(ChunkDescriptor descriptor, ChunkStream<?, ?> chunkStream, SeekableInputStream f) {
+      final ChunkData chunkData = map.computeIfAbsent(descriptor, d -> new ChunkData());
+      if (chunkData.stream == null) {
+        chunkData.stream = chunkStream;
+      } else {
+        chunkData.stream.combine(chunkStream);
+      }
+
+      map.put(descriptor, chunkData);
       lastDescriptor = descriptor;
       this.f = f;
     }
@@ -1654,9 +1919,9 @@ public class ParquetFileReader implements Closeable {
         ChunkData data = entry.getValue();
         if (descriptor.equals(lastDescriptor)) {
           // because of a bug, the last chunk might be larger than descriptor.size
-          chunks.add(new WorkaroundChunk(lastDescriptor, data.buffers, f, data.offsetIndex, rowCount));
+          chunks.add(new WorkaroundChunk(lastDescriptor, data.stream, f, data.offsetIndex, rowCount));
         } else {
-          chunks.add(new Chunk(descriptor, data.buffers, data.offsetIndex, rowCount));
+          chunks.add(new Chunk(descriptor, data.stream, data.offsetIndex, rowCount));
         }
       }
       return chunks;
@@ -1669,18 +1934,18 @@ public class ParquetFileReader implements Closeable {
   private class Chunk {
 
     protected final ChunkDescriptor descriptor;
-    protected final ByteBufferInputStream stream;
+    protected final ChunkStream<?, ?> chunkStream;
     final OffsetIndex offsetIndex;
     final long rowCount;
 
     /**
      * @param descriptor  descriptor for the chunk
-     * @param buffers     ByteBuffers that contain the chunk
      * @param offsetIndex the offset index for this column; might be null
      */
-    public Chunk(ChunkDescriptor descriptor, List<ByteBuffer> buffers, OffsetIndex offsetIndex, long rowCount) {
+    public Chunk(
+        ChunkDescriptor descriptor, ChunkStream<?, ?> chunkStream, OffsetIndex offsetIndex, long rowCount) {
       this.descriptor = descriptor;
-      this.stream = ByteBufferInputStream.wrap(buffers);
+      this.chunkStream = chunkStream;
       this.offsetIndex = offsetIndex;
       this.rowCount = rowCount;
     }
@@ -1691,21 +1956,7 @@ public class ParquetFileReader implements Closeable {
 
     protected PageHeader readPageHeader(BlockCipher.Decryptor blockDecryptor, byte[] pageHeaderAAD)
         throws IOException {
-      return Util.readPageHeader(stream, blockDecryptor, pageHeaderAAD);
-    }
-
-    /**
-     * Calculate checksum of input bytes, throw decoding exception if it does not match the provided
-     * reference crc
-     */
-    private void verifyCrc(int referenceCrc, BytesInput bytes, String exceptionMsg) {
-      crc.reset();
-      try (ByteBufferReleaser releaser = crcAllocator.getReleaser()) {
-        crc.update(bytes.toByteBuffer(releaser));
-      }
-      if (crc.getValue() != ((long) referenceCrc & 0xffffffffL)) {
-        throw new ParquetDecodingException(exceptionMsg);
-      }
+      return Util.readPageHeader(chunkStream.getStream(), blockDecryptor, pageHeaderAAD);
     }
 
     /**
@@ -1724,160 +1975,125 @@ public class ParquetFileReader implements Closeable {
         int rowGroupOrdinal,
         int columnOrdinal)
         throws IOException {
-      List<DataPage> pagesInChunk = new ArrayList<>();
-      DictionaryPage dictionaryPage = null;
       PrimitiveType type = getFileMetaData()
           .getSchema()
           .getType(descriptor.col.getPath())
           .asPrimitiveType();
-      long valuesCountReadSoFar = 0L;
-      int dataPageCountReadSoFar = 0;
-      byte[] dataPageHeaderAAD = null;
+
+      byte[] moduleAAD = null;
       if (null != headerBlockDecryptor) {
-        dataPageHeaderAAD = AesCipher.createModuleAAD(
-            aadPrefix,
-            ModuleType.DataPageHeader,
-            rowGroupOrdinal,
-            columnOrdinal,
-            getPageOrdinal(dataPageCountReadSoFar));
+        moduleAAD = AesCipher.createModuleAAD(
+            aadPrefix, ModuleType.DataPageHeader, rowGroupOrdinal, columnOrdinal, getPageOrdinal(0));
       }
-      while (hasMorePages(valuesCountReadSoFar, dataPageCountReadSoFar)) {
-        byte[] pageHeaderAAD = dataPageHeaderAAD;
-        if (null != headerBlockDecryptor) {
-          // Important: this verifies file integrity (makes sure dictionary page had not been removed)
-          if (null == dictionaryPage && descriptor.metadata.hasDictionaryPage()) {
-            pageHeaderAAD = AesCipher.createModuleAAD(
-                aadPrefix, ModuleType.DictionaryPageHeader, rowGroupOrdinal, columnOrdinal, -1);
-          } else {
-            int pageOrdinal = getPageOrdinal(dataPageCountReadSoFar);
-            AesCipher.quickUpdatePageAAD(dataPageHeaderAAD, pageOrdinal);
+      final Chunk chunk = this;
+
+      final PageIterator iterator = new PageIterator(moduleAAD) {
+        private long valuesCountReadSoFar = 0L;
+        private int dataPageCountReadSoFar = 0;
+
+        private DictionaryPage dictionaryPage;
+        private PageWithHeader nextPage = null;
+        private boolean bufferedToFirstDataPage = false;
+
+        @Override
+        DictionaryPage getDictionaryPage() {
+          if (!bufferedToFirstDataPage) {
+            bufferNextDataPage();
+          }
+          return dictionaryPage;
+        }
+
+        @Override
+        public boolean hasNext() {
+          if (!bufferedToFirstDataPage) {
+            bufferNextDataPage();
+          }
+          return nextPage != null;
+        }
+
+        private boolean hasMorePages(long valuesCountReadSoFar, int dataPageCountReadSoFar) {
+          return offsetIndex == null
+              ? valuesCountReadSoFar < descriptor.metadata.getValueCount()
+              : dataPageCountReadSoFar < offsetIndex.getPageCount();
+        }
+
+        private void bufferNextDataPage() {
+          bufferedToFirstDataPage = true;
+          while (true) {
+            if (!hasMorePages(valuesCountReadSoFar, dataPageCountReadSoFar)) {
+              return;
+            }
+            try {
+              byte[] pageHeaderAAD = dataPageHeaderAAD;
+              if (null != headerBlockDecryptor) {
+                // Important: this verifies file integrity (makes sure dictionary page had not been
+                // removed)
+                if (null == dictionaryPage && descriptor.metadata.hasDictionaryPage()) {
+                  pageHeaderAAD = AesCipher.createModuleAAD(
+                      aadPrefix,
+                      ModuleType.DictionaryPageHeader,
+                      rowGroupOrdinal,
+                      columnOrdinal,
+                      -1);
+                } else {
+                  int pageOrdinal = getPageOrdinal(dataPageCountReadSoFar);
+                  AesCipher.quickUpdatePageAAD(dataPageHeaderAAD, pageOrdinal);
+                }
+              }
+
+              PageWithHeader pageWithHeader =
+                  chunkStream.readNextPage(chunk, type, headerBlockDecryptor, pageHeaderAAD);
+              if (pageWithHeader == null) {
+                return;
+              }
+
+              if (pageWithHeader.header.type == PageType.DICTIONARY_PAGE) {
+                this.dictionaryPage = (DictionaryPage) pageWithHeader.page;
+              } else if (pageWithHeader.header.type == PageType.DATA_PAGE
+                  || pageWithHeader.header.type == PageType.DATA_PAGE_V2) {
+                this.nextPage = pageWithHeader;
+                return;
+              }
+            } catch (IOException e) {
+              throw new ParquetDecodingException(e);
+            }
           }
         }
-        PageHeader pageHeader = readPageHeader(headerBlockDecryptor, pageHeaderAAD);
-        int uncompressedPageSize = pageHeader.getUncompressed_page_size();
-        int compressedPageSize = pageHeader.getCompressed_page_size();
-        final BytesInput pageBytes;
-        switch (pageHeader.type) {
-          case DICTIONARY_PAGE:
-            // there is only one dictionary page per column chunk
-            if (dictionaryPage != null) {
-              throw new ParquetDecodingException(
-                  "more than one dictionary page in column " + descriptor.col);
-            }
-            pageBytes = this.readAsBytesInput(compressedPageSize);
-            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
-              verifyCrc(
-                  pageHeader.getCrc(),
-                  pageBytes,
-                  "could not verify dictionary page integrity, CRC checksum verification failed");
-            }
-            DictionaryPageHeader dicHeader = pageHeader.getDictionary_page_header();
-            dictionaryPage = new DictionaryPage(
-                pageBytes,
-                uncompressedPageSize,
-                dicHeader.getNum_values(),
-                converter.getEncoding(dicHeader.getEncoding()));
-            // Copy crc to new page, used for testing
-            if (pageHeader.isSetCrc()) {
-              dictionaryPage.setCrc(pageHeader.getCrc());
-            }
-            break;
-          case DATA_PAGE:
-            DataPageHeader dataHeaderV1 = pageHeader.getData_page_header();
-            pageBytes = this.readAsBytesInput(compressedPageSize);
-            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
-              verifyCrc(
-                  pageHeader.getCrc(),
-                  pageBytes,
-                  "could not verify page integrity, CRC checksum verification failed");
-            }
-            DataPageV1 dataPageV1 = new DataPageV1(
-                pageBytes,
-                dataHeaderV1.getNum_values(),
-                uncompressedPageSize,
-                converter.fromParquetStatistics(
-                    getFileMetaData().getCreatedBy(), dataHeaderV1.getStatistics(), type),
-                converter.getEncoding(dataHeaderV1.getRepetition_level_encoding()),
-                converter.getEncoding(dataHeaderV1.getDefinition_level_encoding()),
-                converter.getEncoding(dataHeaderV1.getEncoding()));
-            // Copy crc to new page, used for testing
-            if (pageHeader.isSetCrc()) {
-              dataPageV1.setCrc(pageHeader.getCrc());
-            }
-            pagesInChunk.add(dataPageV1);
-            valuesCountReadSoFar += dataHeaderV1.getNum_values();
-            ++dataPageCountReadSoFar;
-            break;
-          case DATA_PAGE_V2:
-            DataPageHeaderV2 dataHeaderV2 = pageHeader.getData_page_header_v2();
-            int dataSize = compressedPageSize
-                - dataHeaderV2.getRepetition_levels_byte_length()
-                - dataHeaderV2.getDefinition_levels_byte_length();
-            final BytesInput repetitionLevels =
-                this.readAsBytesInput(dataHeaderV2.getRepetition_levels_byte_length());
-            final BytesInput definitionLevels =
-                this.readAsBytesInput(dataHeaderV2.getDefinition_levels_byte_length());
-            final BytesInput values = this.readAsBytesInput(dataSize);
-            if (options.usePageChecksumVerification() && pageHeader.isSetCrc()) {
-              pageBytes = BytesInput.concat(repetitionLevels, definitionLevels, values);
-              verifyCrc(
-                  pageHeader.getCrc(),
-                  pageBytes,
-                  "could not verify page integrity, CRC checksum verification failed");
-            }
-            DataPageV2 dataPageV2 = new DataPageV2(
-                dataHeaderV2.getNum_rows(),
-                dataHeaderV2.getNum_nulls(),
-                dataHeaderV2.getNum_values(),
-                repetitionLevels,
-                definitionLevels,
-                converter.getEncoding(dataHeaderV2.getEncoding()),
-                values,
-                uncompressedPageSize,
-                converter.fromParquetStatistics(
-                    getFileMetaData().getCreatedBy(), dataHeaderV2.getStatistics(), type),
-                dataHeaderV2.isIs_compressed());
-            // Copy crc to new page, used for testing
-            if (pageHeader.isSetCrc()) {
-              dataPageV2.setCrc(pageHeader.getCrc());
-            }
-            pagesInChunk.add(dataPageV2);
-            valuesCountReadSoFar += dataHeaderV2.getNum_values();
-            ++dataPageCountReadSoFar;
-            break;
-          default:
-            LOG.debug("skipping page of type {} of size {}", pageHeader.getType(), compressedPageSize);
-            stream.skipFully(compressedPageSize);
-            break;
+
+        @Override
+        public DataPage next() {
+          if (!bufferedToFirstDataPage) {
+            bufferNextDataPage();
+          }
+          if (nextPage == null) {
+            return null;
+          }
+
+          valuesCountReadSoFar += ((DataPage) nextPage.page).getValueCount();
+          ++dataPageCountReadSoFar;
+
+          final DataPage next = (DataPage) nextPage.page;
+          nextPage = null;
+          bufferNextDataPage();
+          return next;
         }
-      }
-      if (offsetIndex == null && valuesCountReadSoFar != descriptor.metadata.getValueCount()) {
-        // Would be nice to have a CorruptParquetFileException or something as a subclass?
-        throw new IOException(
-            "Expected " + descriptor.metadata.getValueCount() + " values in column chunk at " + getPath()
-                + " offset " + descriptor.metadata.getFirstDataPageOffset() + " but got "
-                + valuesCountReadSoFar + " values instead over " + pagesInChunk.size()
-                + " pages ending at file offset " + (descriptor.fileOffset + stream.position()));
-      }
+      };
+
       BytesInputDecompressor decompressor =
           options.getCodecFactory().getDecompressor(descriptor.metadata.getCodec());
+
       return new ColumnChunkPageReader(
           decompressor,
-          pagesInChunk,
-          dictionaryPage,
+          iterator,
+          iterator.getDictionaryPage(),
           offsetIndex,
           rowCount,
           pageBlockDecryptor,
           aadPrefix,
           rowGroupOrdinal,
           columnOrdinal,
-          options);
-    }
-
-    private boolean hasMorePages(long valuesCountReadSoFar, int dataPageCountReadSoFar) {
-      return offsetIndex == null
-          ? valuesCountReadSoFar < descriptor.metadata.getValueCount()
-          : dataPageCountReadSoFar < offsetIndex.getPageCount();
+          options,
+          options.columnChunkBufferSize() <= 0);
     }
 
     private int getPageOrdinal(int dataPageCountReadSoFar) {
@@ -1888,58 +2104,60 @@ public class ParquetFileReader implements Closeable {
       return offsetIndex.getPageOrdinal(dataPageCountReadSoFar);
     }
 
-    /**
-     * @param size the size of the page
-     * @return the page
-     * @throws IOException if there is an error while reading from the file stream
-     */
     public BytesInput readAsBytesInput(int size) throws IOException {
-      return BytesInput.from(stream.sliceBuffers(size));
+      return BytesInput.from(chunkStream.sliceBuffers(size));
     }
+  }
+
+  abstract static class PageIterator implements Iterator<DataPage> {
+    byte[] dataPageHeaderAAD;
+
+    PageIterator(byte[] dataPageHeaderAAD) {
+      this.dataPageHeaderAAD = dataPageHeaderAAD;
+    }
+
+    abstract DictionaryPage getDictionaryPage();
   }
 
   /**
    * deals with a now fixed bug where compressedLength was missing a few bytes.
    */
   private class WorkaroundChunk extends Chunk {
-
-    private final SeekableInputStream f;
-
+    SeekableInputStream f;
     /**
      * @param descriptor the descriptor of the chunk
-     * @param f          the file stream positioned at the end of this chunk
      */
     private WorkaroundChunk(
         ChunkDescriptor descriptor,
-        List<ByteBuffer> buffers,
+        ChunkStream stream,
         SeekableInputStream f,
         OffsetIndex offsetIndex,
         long rowCount) {
-      super(descriptor, buffers, offsetIndex, rowCount);
+      super(descriptor, stream, offsetIndex, rowCount);
       this.f = f;
     }
 
     protected PageHeader readPageHeader() throws IOException {
       PageHeader pageHeader;
-      stream.mark(8192); // headers should not be larger than 8k
+      chunkStream.getStream().mark(8192); // headers should not be larger than 8k
       try {
-        pageHeader = Util.readPageHeader(stream);
+        pageHeader = Util.readPageHeader(chunkStream.stream);
       } catch (IOException e) {
         // this is to workaround a bug where the compressedLength
         // of the chunk is missing the size of the header of the dictionary
         // to allow reading older files (using dictionary) we need this.
         // usually 13 to 19 bytes are missing
         // if the last page is smaller than this, the page header itself is truncated in the buffer.
-        stream.reset(); // resetting the buffer to the position before we got the error
+        chunkStream.getStream().reset(); // resetting the buffer to the position before we got the error
         LOG.info("completing the column chunk to read the page header");
-        pageHeader = Util.readPageHeader(
-            new SequenceInputStream(stream, f)); // trying again from the buffer + remainder of the stream.
+        pageHeader = Util.readPageHeader(new SequenceInputStream(
+            chunkStream.getStream(), f)); // trying again from the buffer + remainder of the stream.
       }
       return pageHeader;
     }
 
     public BytesInput readAsBytesInput(int size) throws IOException {
-      int available = stream.available();
+      int available = chunkStream.getStream().available();
       if (size > available) {
         // this is to workaround a bug where the compressedLength
         // of the chunk is missing the size of the header of the dictionary
@@ -1947,8 +2165,7 @@ public class ParquetFileReader implements Closeable {
         // usually 13 to 19 bytes are missing
         int missingBytes = size - available;
         LOG.info("completed the column chunk with {} bytes", missingBytes);
-
-        List<ByteBuffer> streamBuffers = stream.sliceBuffers(available);
+        List<ByteBuffer> streamBuffers = chunkStream.sliceBuffers(available);
 
         ByteBuffer lastBuffer = ByteBuffer.allocate(missingBytes);
         f.readFully(lastBuffer);
@@ -2034,58 +2251,15 @@ public class ParquetFileReader implements Closeable {
     }
 
     /**
-     * @param f       file to read the chunks from
+     * @param fileStream       file to read the chunks from
      * @param builder used to build chunk list to read the pages for the different columns
      * @throws IOException if there is an error while reading from the stream
      */
-    public void readAll(SeekableInputStream f, ChunkListBuilder builder) throws IOException {
-      f.seek(offset);
-
-      int fullAllocations = Math.toIntExact(length / options.getMaxAllocationSize());
-      int lastAllocationSize = Math.toIntExact(length % options.getMaxAllocationSize());
-
-      int numAllocations = fullAllocations + (lastAllocationSize > 0 ? 1 : 0);
-      List<ByteBuffer> buffers = new ArrayList<>(numAllocations);
-
-      for (int i = 0; i < fullAllocations; i += 1) {
-        buffers.add(options.getAllocator().allocate(options.getMaxAllocationSize()));
-      }
-
-      if (lastAllocationSize > 0) {
-        buffers.add(options.getAllocator().allocate(lastAllocationSize));
-      }
-      builder.addBuffersToRelease(buffers);
-
-      long readStart = System.nanoTime();
-      for (ByteBuffer buffer : buffers) {
-        f.readFully(buffer);
-        buffer.flip();
-      }
-      setReadMetrics(readStart);
-
-      // report in a counter the data we just scanned
-      BenchmarkCounter.incrementBytesRead(length);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffers);
-      for (final ChunkDescriptor descriptor : chunks) {
-        builder.add(descriptor, stream.sliceBuffers(descriptor.size), f);
-      }
-    }
-
-    private void setReadMetrics(long startNs) {
-      ParquetMetricsCallback metricsCallback = options.getMetricsCallback();
-      if (metricsCallback != null) {
-        long totalFileReadTimeNs = Math.max(System.nanoTime() - startNs, 0);
-        double sizeInMb = ((double) length) / (1024 * 1024);
-        double timeInSec = ((double) totalFileReadTimeNs) / 1000_0000_0000L;
-        double throughput = sizeInMb / timeInSec;
-        LOG.debug(
-            "Parquet: File Read stats:  Length: {} MB, Time: {} secs, throughput: {} MB/sec ",
-            sizeInMb,
-            timeInSec,
-            throughput);
-        metricsCallback.setDuration(ParquetFileReaderMetrics.ReadTime.name(), totalFileReadTimeNs);
-        metricsCallback.setValueLong(ParquetFileReaderMetrics.ReadSize.name(), length);
-        metricsCallback.setValueDouble(ParquetFileReaderMetrics.ReadThroughput.name(), throughput);
+    public void readAll(ParquetFileStream fileStream, ChunkListBuilder builder) throws IOException {
+      if (options.columnChunkBufferSize() <= 0) {
+        fileStream.createEagerChunkStream(builder, offset, length);
+      } else {
+        fileStream.createLazyChunkStream(builder, options.columnChunkBufferSize());
       }
     }
 

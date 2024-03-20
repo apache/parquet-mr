@@ -135,7 +135,6 @@ abstract class ColumnReaderBase implements ColumnReader {
 
   private final ParsedVersion writerVersion;
   private final ColumnDescriptor path;
-  private final long totalValueCount;
   private final PageReader pageReader;
   private final Dictionary dictionary;
 
@@ -465,14 +464,13 @@ abstract class ColumnReaderBase implements ColumnReader {
     } else {
       this.dictionary = null;
     }
-    this.totalValueCount = pageReader.getTotalValueCount();
-    if (totalValueCount <= 0) {
-      throw new ParquetDecodingException("totalValueCount '" + totalValueCount + "' <= 0");
+    if (pageReader.isEager() && pageReader.getTotalValueCount() <= 0) {
+      throw new ParquetDecodingException("totalValueCount '" + pageReader.getTotalValueCount() + "' <= 0");
     }
   }
 
   boolean isFullyConsumed() {
-    return readValues >= totalValueCount;
+    return pageReader.isEager() && readValues >= pageReader.getTotalValueCount();
   }
 
   /**
@@ -601,7 +599,9 @@ abstract class ColumnReaderBase implements ColumnReader {
                         + "%d, definition level: %d",
                     path,
                     readValues,
-                    totalValueCount,
+                    pageReader.isEager()
+                        ? pageReader.getTotalValueCount()
+                        : -1, // @Todo print something else?
                     readValues - (endOfPageValueCount - pageValueCount),
                     pageValueCount,
                     repetitionLevel,
@@ -615,7 +615,7 @@ abstract class ColumnReaderBase implements ColumnReader {
                   + "%d, definition level: %d",
               path,
               readValues,
-              totalValueCount,
+              pageReader.isEager() ? pageReader.getTotalValueCount() : -1, // @Todo print something else?
               readValues - (endOfPageValueCount - pageValueCount),
               pageValueCount,
               repetitionLevel,
@@ -647,7 +647,10 @@ abstract class ColumnReaderBase implements ColumnReader {
     return definitionLevel;
   }
 
-  private void checkRead() {
+  private int skipValues = 0;
+
+  /** Reads all pages. */
+  private void consumeAllPages() {
     int rl, dl;
     int skipValues = 0;
     for (; ; ) {
@@ -673,6 +676,35 @@ abstract class ColumnReaderBase implements ColumnReader {
     binding.skip(skipValues);
     repetitionLevel = rl;
     definitionLevel = dl;
+  }
+
+  /**
+   * Reads the next page.
+   */
+  private void consumePage() {
+    int rl, dl;
+    if (isPageFullyConsumed()) {
+      skipValues = 0;
+      if (isFullyConsumed()) {
+        LOG.debug("end reached");
+        repetitionLevel = 0; // the next repetition level
+        return;
+      }
+      readPage();
+    }
+    rl = repetitionLevelColumn.nextInt();
+    dl = definitionLevelColumn.nextInt();
+    ++readValues;
+
+    if (skipRL(rl)) {
+      if (dl == maxDefinitionLevel) {
+        ++skipValues;
+      }
+    } else {
+      repetitionLevel = rl;
+      definitionLevel = dl;
+      binding.skip(skipValues);
+    }
   }
 
   /*
@@ -799,7 +831,11 @@ abstract class ColumnReaderBase implements ColumnReader {
    */
   @Override
   public void consume() {
-    checkRead();
+    if (pageReader.isEager()) {
+      consumeAllPages();
+    } else {
+      consumePage();
+    }
     valueRead = false;
   }
 
@@ -811,7 +847,7 @@ abstract class ColumnReaderBase implements ColumnReader {
   @Deprecated
   @Override
   public long getTotalValueCount() {
-    return totalValueCount;
+    return pageReader.isEager() ? pageReader.getTotalValueCount() : 0; // @Todo should be -1?
   }
 
   abstract static class IntIterator {

@@ -595,7 +595,7 @@
               <exclude>org.apache.parquet.hadoop.thrift.TBaseWriteSupport#setThriftClass(org.apache.parquet.conf.ParquetConfiguration,java.lang.Class)</exclude>
               <exclude>org.apache.parquet.proto.ProtoParquetReader#builder(org.apache.hadoop.fs.Path,boolean)</exclude>
               <exclude>org.apache.parquet.proto.ProtoParquetReader#builder(org.apache.parquet.io.InputFile,boolean)</exclude>
-
+              <exclude>org.apache.parquet.column.page.PageReader#isEager()</exclude>
               <!-- Due to the removal of deprecated methods -->
               <exclude>org.apache.parquet.arrow.schema.SchemaMapping</exclude>
 

@@ -20,13 +20,13 @@ package org.apache.parquet.hadoop;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PrimitiveIterator;
-import java.util.Queue;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.ByteBufferReleaser;
@@ -67,8 +67,7 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
   static final class ColumnChunkPageReader implements PageReader {
 
     private final BytesInputDecompressor decompressor;
-    private final long valueCount;
-    private final Queue<DataPage> compressedPages;
+    private final Iterator<DataPage> compressedPages;
     private final DictionaryPage compressedDictionaryPage;
     // null means no page synchronization is required; firstRowIndex will not be returned by the pages
     private final OffsetIndex offsetIndex;
@@ -81,9 +80,12 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
     private final byte[] dictionaryPageAAD;
     private final ByteBufferReleaser releaser;
 
+    private final boolean isEager;
+    private long valueCount;
+
     ColumnChunkPageReader(
         BytesInputDecompressor decompressor,
-        List<DataPage> compressedPages,
+        Iterator<DataPage> compressedPages,
         DictionaryPage compressedDictionaryPage,
         OffsetIndex offsetIndex,
         long rowCount,
@@ -91,15 +93,23 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
         byte[] fileAAD,
         int rowGroupOrdinal,
         int columnOrdinal,
-        ParquetReadOptions options) {
+        ParquetReadOptions options,
+        boolean isEager) {
       this.decompressor = decompressor;
-      this.compressedPages = new ArrayDeque<DataPage>(compressedPages);
+      this.isEager = isEager;
       this.compressedDictionaryPage = compressedDictionaryPage;
-      long count = 0;
-      for (DataPage p : compressedPages) {
-        count += p.getValueCount();
+      this.valueCount = 0;
+      if (isEager) {
+        final List<DataPage> materializedPages = new ArrayList<>();
+        for (Iterator<DataPage> it = compressedPages; it.hasNext(); ) {
+          final DataPage next = it.next();
+          this.valueCount += next.getValueCount();
+          materializedPages.add(next);
+        }
+        this.compressedPages = materializedPages.iterator();
+      } else {
+        this.compressedPages = compressedPages;
       }
-      this.valueCount = count;
       this.offsetIndex = offsetIndex;
       this.rowCount = rowCount;
       this.options = options;
@@ -126,14 +136,30 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
 
     @Override
     public long getTotalValueCount() {
+      if (!isEager()) {
+        throw new IllegalStateException(
+            "Cannot compute totalValueCount before underlying iterator has been exhausted");
+      }
       return valueCount;
     }
 
     @Override
+    public boolean isEager() {
+      return isEager || !compressedPages.hasNext();
+    }
+
+    @Override
     public DataPage readPage() {
-      final DataPage compressedPage = compressedPages.poll();
+      if (!compressedPages.hasNext()) {
+        return null;
+      }
+      final DataPage compressedPage = compressedPages.next();
       if (compressedPage == null) {
         return null;
+      }
+
+      if (!isEager) {
+        valueCount += compressedPage.getValueCount();
       }
       final int currentPageIndex = pageIndex++;
 

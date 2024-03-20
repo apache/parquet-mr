@@ -33,6 +33,8 @@ public interface PageReader {
    */
   long getTotalValueCount();
 
+  boolean isEager();
+
   /**
    * @return the next page in that chunk or null if after the last page
    */

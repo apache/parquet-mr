@@ -21,6 +21,7 @@ package org.apache.parquet;
 
 import static org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER;
 import static org.apache.parquet.hadoop.ParquetInputFormat.BLOOM_FILTERING_ENABLED;
+import static org.apache.parquet.hadoop.ParquetInputFormat.COLUMN_CHUNK_BUFFER_SIZE;
 import static org.apache.parquet.hadoop.ParquetInputFormat.COLUMN_INDEX_FILTERING_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.DICTIONARY_FILTERING_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.OFF_HEAP_DECRYPT_BUFFER_ENABLED;
@@ -60,6 +61,8 @@ public class ParquetReadOptions {
   private static final boolean BLOOM_FILTER_ENABLED_DEFAULT = true;
   private static final boolean USE_OFF_HEAP_DECRYPT_BUFFER_DEFAULT = false;
 
+  private static final int COLUMN_CHUNK_BUFFER_SIZE_DEFAULT = -1;
+
   private final boolean useSignedStringMinMax;
   private final boolean useStatsFilter;
   private final boolean useDictionaryFilter;
@@ -68,6 +71,8 @@ public class ParquetReadOptions {
   private final boolean usePageChecksumVerification;
   private final boolean useBloomFilter;
   private final boolean useOffHeapDecryptBuffer;
+
+  private final int columnChunkBufferSize;
   private final FilterCompat.Filter recordFilter;
   private final ParquetMetadataConverter.MetadataFilter metadataFilter;
   private final CompressionCodecFactory codecFactory;
@@ -87,6 +92,7 @@ public class ParquetReadOptions {
       boolean usePageChecksumVerification,
       boolean useBloomFilter,
       boolean useOffHeapDecryptBuffer,
+      int columnChunkBufferSize,
       FilterCompat.Filter recordFilter,
       ParquetMetadataConverter.MetadataFilter metadataFilter,
       CompressionCodecFactory codecFactory,
@@ -104,6 +110,7 @@ public class ParquetReadOptions {
         usePageChecksumVerification,
         useBloomFilter,
         useOffHeapDecryptBuffer,
+        columnChunkBufferSize,
         recordFilter,
         metadataFilter,
         codecFactory,
@@ -124,6 +131,7 @@ public class ParquetReadOptions {
       boolean usePageChecksumVerification,
       boolean useBloomFilter,
       boolean useOffHeapDecryptBuffer,
+      int columnChunkBufferSize,
       FilterCompat.Filter recordFilter,
       ParquetMetadataConverter.MetadataFilter metadataFilter,
       CompressionCodecFactory codecFactory,
@@ -141,6 +149,7 @@ public class ParquetReadOptions {
     this.usePageChecksumVerification = usePageChecksumVerification;
     this.useBloomFilter = useBloomFilter;
     this.useOffHeapDecryptBuffer = useOffHeapDecryptBuffer;
+    this.columnChunkBufferSize = columnChunkBufferSize;
     this.recordFilter = recordFilter;
     this.metadataFilter = metadataFilter;
     this.codecFactory = codecFactory;
@@ -182,6 +191,10 @@ public class ParquetReadOptions {
 
   public boolean usePageChecksumVerification() {
     return usePageChecksumVerification;
+  }
+
+  public int columnChunkBufferSize() {
+    return columnChunkBufferSize;
   }
 
   public FilterCompat.Filter getRecordFilter() {
@@ -246,6 +259,7 @@ public class ParquetReadOptions {
     protected boolean usePageChecksumVerification = PAGE_VERIFY_CHECKSUM_ENABLED_DEFAULT;
     protected boolean useBloomFilter = BLOOM_FILTER_ENABLED_DEFAULT;
     protected boolean useOffHeapDecryptBuffer = USE_OFF_HEAP_DECRYPT_BUFFER_DEFAULT;
+    protected int columnChunkBufferSize = COLUMN_CHUNK_BUFFER_SIZE_DEFAULT;
     protected FilterCompat.Filter recordFilter = null;
     protected ParquetMetadataConverter.MetadataFilter metadataFilter = NO_FILTER;
     // the page size parameter isn't used when only using the codec factory to get decompressors
@@ -274,6 +288,7 @@ public class ParquetReadOptions {
       withCodecFactory(HadoopCodecs.newFactory(conf, 0));
       withRecordFilter(getFilter(conf));
       withMaxAllocationInBytes(conf.getInt(ALLOCATION_SIZE, 8388608));
+      withColumnChunkBufferSize(conf.getInt(COLUMN_CHUNK_BUFFER_SIZE, -1));
       String badRecordThresh = conf.get(BAD_RECORD_THRESHOLD_CONF_KEY);
       if (badRecordThresh != null) {
         set(BAD_RECORD_THRESHOLD_CONF_KEY, badRecordThresh);
@@ -352,6 +367,11 @@ public class ParquetReadOptions {
       return this;
     }
 
+    public Builder withColumnChunkBufferSize(int columnChunkBufferSize) {
+      this.columnChunkBufferSize = columnChunkBufferSize;
+      return this;
+    }
+
     public Builder useBloomFilter(boolean useBloomFilter) {
       this.useBloomFilter = useBloomFilter;
       return this;
@@ -424,6 +444,7 @@ public class ParquetReadOptions {
       withPageChecksumVerification(options.usePageChecksumVerification);
       withDecryption(options.fileDecryptionProperties);
       withMetricsCallback(options.metricsCallback);
+      withColumnChunkBufferSize(options.columnChunkBufferSize);
       conf = options.conf;
       for (Map.Entry<String, String> keyValue : options.properties.entrySet()) {
         set(keyValue.getKey(), keyValue.getValue());
@@ -449,6 +470,7 @@ public class ParquetReadOptions {
           usePageChecksumVerification,
           useBloomFilter,
           useOffHeapDecryptBuffer,
+          columnChunkBufferSize,
           recordFilter,
           metadataFilter,
           codecFactory,

@@ -101,6 +101,11 @@ public class TestStatistics {
     }
 
     @Override
+    public boolean isEager() {
+      return false;
+    }
+
+    @Override
     public DataPage readPage() {
       return data;
     }

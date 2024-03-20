@@ -34,16 +34,28 @@ public class MemPageReader implements PageReader {
   private final Iterator<DataPage> pages;
   private final DictionaryPage dictionaryPage;
 
-  public MemPageReader(long totalValueCount, Iterator<DataPage> pages, DictionaryPage dictionaryPage) {
+  private final boolean isEager;
+
+  public MemPageReader(
+      long totalValueCount, Iterator<DataPage> pages, DictionaryPage dictionaryPage, boolean isEager) {
     super();
     this.pages = Objects.requireNonNull(pages, "pages cannot be null");
     this.totalValueCount = totalValueCount;
     this.dictionaryPage = dictionaryPage;
+    this.isEager = isEager;
   }
 
   @Override
   public long getTotalValueCount() {
+    if (!isEager && pages.hasNext()) {
+      throw new IllegalStateException("Can't return totalValueCount until lazy iterator has been exhausted");
+    }
     return totalValueCount;
+  }
+
+  @Override
+  public boolean isEager() {
+    return isEager || !pages.hasNext();
   }
 
   @Override
