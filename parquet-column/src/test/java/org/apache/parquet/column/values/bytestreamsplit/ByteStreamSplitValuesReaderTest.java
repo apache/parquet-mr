@@ -19,28 +19,40 @@
 package org.apache.parquet.column.values.bytestreamsplit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Random;
 import org.apache.parquet.bytes.ByteBufferInputStream;
+import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.io.ParquetDecodingException;
-import org.junit.Assert;
+import org.apache.parquet.io.api.Binary;
 import org.junit.Test;
+import org.junit.experimental.runners.Enclosed;
+import org.junit.runner.RunWith;
 
+@RunWith(Enclosed.class)
 public class ByteStreamSplitValuesReaderTest {
+  private static <Reader extends ValuesReader> Reader makeReader(byte[] input, int length, Class<Reader> cls)
+      throws Exception {
+    ByteBuffer buffer = ByteBuffer.wrap(input);
+    ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
+    Reader reader = cls.newInstance();
+    reader.initFromPage(length, stream);
+    return reader;
+  }
 
   public static class FloatTest {
 
-    private void testReader(byte[] input, float[] values) throws IOException {
-      ByteBuffer buffer = ByteBuffer.wrap(input);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
-      ByteStreamSplitValuesReaderForFloat reader = new ByteStreamSplitValuesReaderForFloat();
-      reader.initFromPage(values.length, stream);
+    private void testReader(byte[] input, float[] values) throws Exception {
+      ByteStreamSplitValuesReaderForFloat reader =
+          makeReader(input, values.length, ByteStreamSplitValuesReaderForFloat.class);
       for (float expectedValue : values) {
         float f = reader.readFloat();
         assertEquals(expectedValue, f, 0.0f);
       }
+      // All data exhausted
+      assertThrows(ParquetDecodingException.class, () -> reader.readFloat());
     }
 
     @Test
@@ -65,7 +77,7 @@ public class ByteStreamSplitValuesReaderTest {
         (byte) 0x41,
         (byte) 0x42
       };
-      float expectedValues[] = {-98.62548828125f, 23.62744140625f, 44.62939453125f};
+      float[] expectedValues = {-98.62548828125f, 23.62744140625f, 44.62939453125f};
       testReader(byteData, expectedValues);
     }
 
@@ -90,18 +102,11 @@ public class ByteStreamSplitValuesReaderTest {
     @Test
     public void testExtraReads() throws Exception {
       byte[] byteData = {(byte) 0x00, (byte) 0x00, (byte) 0x10, (byte) 0x40};
-      ByteBuffer buffer = ByteBuffer.wrap(byteData);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
-
-      ByteStreamSplitValuesReaderForFloat reader = new ByteStreamSplitValuesReaderForFloat();
-      reader.initFromPage(1, stream);
+      ByteStreamSplitValuesReaderForFloat reader =
+          makeReader(byteData, 1, ByteStreamSplitValuesReaderForFloat.class);
       float f = reader.readFloat();
       assertEquals(2.25f, f, 0.0f);
-      try {
-        reader.readFloat();
-        Assert.fail("Expected an exception.");
-      } catch (ParquetDecodingException ex) {
-      }
+      assertThrows(ParquetDecodingException.class, () -> reader.readFloat());
     }
 
     @Test
@@ -114,60 +119,44 @@ public class ByteStreamSplitValuesReaderTest {
       byteData[7] = (byte) 0x00;
       byteData[11] = (byte) 0x10;
       byteData[15] = (byte) 0x40;
-      ByteBuffer buffer = ByteBuffer.wrap(byteData);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
 
-      ByteStreamSplitValuesReaderForFloat reader = new ByteStreamSplitValuesReaderForFloat();
-      reader.initFromPage(4, stream);
+      ByteStreamSplitValuesReaderForFloat reader =
+          makeReader(byteData, 4, ByteStreamSplitValuesReaderForFloat.class);
       reader.skip(3);
       float f = reader.readFloat();
       assertEquals(2.25f, f, 0.0f);
+      // Data exhausted
+      assertThrows(ParquetDecodingException.class, () -> reader.readFloat());
     }
 
     @Test
     public void testSkipOverflow() throws Exception {
       byte[] byteData = new byte[128];
-      ByteBuffer buffer = ByteBuffer.wrap(byteData);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
-
-      ByteStreamSplitValuesReaderForFloat reader = new ByteStreamSplitValuesReaderForFloat();
-      reader.initFromPage(32, stream);
-
-      try {
-        reader.skip(33);
-        Assert.fail("Expected an exception.");
-      } catch (ParquetDecodingException ex) {
-      }
+      ByteStreamSplitValuesReaderForFloat reader =
+          makeReader(byteData, 32, ByteStreamSplitValuesReaderForFloat.class);
+      assertThrows(ParquetDecodingException.class, () -> reader.skip(33));
     }
 
     @Test
     public void testSkipUnderflow() throws Exception {
       byte[] byteData = new byte[128];
-      ByteBuffer buffer = ByteBuffer.wrap(byteData);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
-
-      ByteStreamSplitValuesReaderForFloat reader = new ByteStreamSplitValuesReaderForFloat();
-      reader.initFromPage(32, stream);
-
-      try {
-        reader.skip(-1);
-        Assert.fail("Expected an exception.");
-      } catch (ParquetDecodingException ex) {
-      }
+      ByteStreamSplitValuesReaderForFloat reader =
+          makeReader(byteData, 32, ByteStreamSplitValuesReaderForFloat.class);
+      assertThrows(ParquetDecodingException.class, () -> reader.skip(-1));
     }
   }
 
   public static class DoubleTest {
 
-    private void testReader(byte[] input, double[] values) throws IOException {
-      ByteBuffer buffer = ByteBuffer.wrap(input);
-      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
-      ByteStreamSplitValuesReaderForDouble reader = new ByteStreamSplitValuesReaderForDouble();
-      reader.initFromPage(values.length, stream);
+    private void testReader(byte[] input, double[] values) throws Exception {
+      ByteStreamSplitValuesReaderForDouble reader =
+          makeReader(input, values.length, ByteStreamSplitValuesReaderForDouble.class);
       for (double expectedValue : values) {
         double d = reader.readDouble();
         assertEquals(expectedValue, d, 0.0);
       }
+      // All data exhausted
+      assertThrows(ParquetDecodingException.class, () -> reader.readDouble());
     }
 
     @Test
@@ -206,7 +195,7 @@ public class ByteStreamSplitValuesReaderTest {
         (byte) 0xC0,
         (byte) 0x3F
       };
-      double expectedValues[] = {256.625449218, -78956.4455667788, 0.62565};
+      double[] expectedValues = {256.625449218, -78956.4455667788, 0.62565};
       testReader(byteData, expectedValues);
     }
 
@@ -224,6 +213,126 @@ public class ByteStreamSplitValuesReaderTest {
           byteData[numElements * j + i] = (byte) ((fAsLong >> (8 * j)) & 0xFF);
         }
       }
+      testReader(byteData, values);
+    }
+  }
+
+  public static class IntegerTest {
+    private void testReader(byte[] input, int[] values) throws Exception {
+      ByteStreamSplitValuesReaderForInteger reader =
+          makeReader(input, values.length, ByteStreamSplitValuesReaderForInteger.class);
+      for (int expectedValue : values) {
+        int actual = reader.readInteger();
+        assertEquals(expectedValue, actual);
+      }
+      // All data exhausted
+      assertThrows(ParquetDecodingException.class, () -> reader.readInteger());
+    }
+
+    @Test
+    public void testSingleElement() throws Exception {
+      byte[] byteData = {(byte) 0x12, (byte) 0x34, (byte) 0x56, (byte) 0x78};
+      testReader(byteData, new int[] {0x78563412});
+    }
+
+    @Test
+    public void testSmallBuffer() throws Exception {
+      byte[] byteData = {
+        (byte) 0x12, (byte) 0x34, (byte) 0x56, (byte) 0x78,
+        (byte) 0x9A, (byte) 0xBC, (byte) 0xDE, (byte) 0xF0,
+      };
+      testReader(byteData, new int[] {0xDE9A5612, 0xF0BC7834});
+    }
+  }
+
+  public static class LongTest {
+    private void testReader(byte[] input, long[] values) throws Exception {
+      ByteStreamSplitValuesReaderForLong reader =
+          makeReader(input, values.length, ByteStreamSplitValuesReaderForLong.class);
+      for (long expectedValue : values) {
+        long actual = reader.readLong();
+        assertEquals(expectedValue, actual);
+      }
+      // All data exhausted
+      assertThrows(ParquetDecodingException.class, () -> reader.readLong());
+    }
+
+    @Test
+    public void testSingleElement() throws Exception {
+      byte[] byteData = {
+        (byte) 0x12, (byte) 0x34, (byte) 0x56, (byte) 0x78,
+        (byte) 0x9A, (byte) 0xBC, (byte) 0xDE, (byte) 0xF0,
+      };
+      testReader(byteData, new long[] {0xF0DEBC9A78563412L});
+    }
+
+    @Test
+    public void testSmallBuffer() throws Exception {
+      byte[] byteData = {
+        (byte) 0x00, (byte) 0x11, (byte) 0x22, (byte) 0x33,
+        (byte) 0x44, (byte) 0x55, (byte) 0x66, (byte) 0x77,
+        (byte) 0x88, (byte) 0x99, (byte) 0xAA, (byte) 0xBB,
+        (byte) 0xCC, (byte) 0xDD, (byte) 0xEE, (byte) 0xFF,
+      };
+      testReader(byteData, new long[] {0xEECCAA8866442200L, 0xFFDDBB9977553311L});
+    }
+  }
+
+  public static class FixedLenByteArrayTest {
+    private static ByteStreamSplitValuesReaderForFLBA makeReader(byte[] input, int valuesCount) throws Exception {
+      ByteBuffer buffer = ByteBuffer.wrap(input);
+      ByteBufferInputStream stream = ByteBufferInputStream.wrap(buffer);
+      ByteStreamSplitValuesReaderForFLBA reader =
+          new ByteStreamSplitValuesReaderForFLBA(input.length / valuesCount);
+      reader.initFromPage(valuesCount, stream);
+      return reader;
+    }
+
+    private void testReader(byte[] input, byte[][] values) throws Exception {
+      ByteStreamSplitValuesReaderForFLBA reader = makeReader(input, values.length);
+      Binary previousExpected = null, previousActual = null;
+      for (byte[] expectedValue : values) {
+        Binary expected = Binary.fromReusedByteArray(expectedValue);
+        Binary actual = reader.readBytes();
+        assertEquals(expected, actual);
+        if (previousExpected != null) {
+          // The latest readBytes() call shouldn't have clobbered the result of the previous call.
+          assertEquals(previousExpected, previousActual);
+        }
+        previousExpected = expected;
+        previousActual = actual;
+      }
+      // All data exhausted
+      assertThrows(ParquetDecodingException.class, () -> reader.readBytes());
+    }
+
+    @Test
+    public void testSingleElement() throws Exception {
+      byte[] byteData = {
+        (byte) 0x12, (byte) 0x34, (byte) 0x56,
+      };
+      byte[][] values = {
+        {
+          (byte) 0x12, (byte) 0x34, (byte) 0x56,
+        }
+      };
+      testReader(byteData, values);
+    }
+
+    @Test
+    public void testSmallBuffer() throws Exception {
+      byte[] byteData = {
+        (byte) 0x12, (byte) 0x34, (byte) 0x56,
+        (byte) 0x78, (byte) 0x9A, (byte) 0xBC,
+      };
+      byte[][] values = {
+        {
+          (byte) 0x12, (byte) 0x56, (byte) 0x9A,
+        },
+        {
+          (byte) 0x34, (byte) 0x78, (byte) 0xBC,
+        },
+      };
       testReader(byteData, values);
     }
   }

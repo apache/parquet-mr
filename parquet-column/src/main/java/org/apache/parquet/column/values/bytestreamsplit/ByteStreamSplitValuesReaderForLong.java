@@ -18,13 +18,13 @@
  */
 package org.apache.parquet.column.values.bytestreamsplit;
 
-public class ByteStreamSplitValuesReaderForFloat extends ByteStreamSplitValuesReader {
-  public ByteStreamSplitValuesReaderForFloat() {
-    super(Float.BYTES);
+public class ByteStreamSplitValuesReaderForLong extends ByteStreamSplitValuesReader {
+  public ByteStreamSplitValuesReaderForLong() {
+    super(8);
   }
 
   @Override
-  public float readFloat() {
-    return decodedDataBuffer.getFloat(nextElementByteOffset());
+  public long readLong() {
+    return decodedDataBuffer.getLong(nextElementByteOffset());
   }
 }

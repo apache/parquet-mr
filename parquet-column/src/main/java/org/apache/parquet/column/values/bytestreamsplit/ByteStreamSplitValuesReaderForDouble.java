@@ -18,20 +18,13 @@
  */
 package org.apache.parquet.column.values.bytestreamsplit;
 
-import org.apache.parquet.bytes.BytesUtils;
-
 public class ByteStreamSplitValuesReaderForDouble extends ByteStreamSplitValuesReader {
-
-  private final byte[] valueByteBuffer;
-
   public ByteStreamSplitValuesReaderForDouble() {
     super(Double.BYTES);
-    valueByteBuffer = new byte[Double.BYTES];
   }
 
   @Override
   public double readDouble() {
-    gatherElementDataFromStreams(valueByteBuffer);
-    return Double.longBitsToDouble(BytesUtils.bytesToLong(valueByteBuffer));
+    return decodedDataBuffer.getDouble(nextElementByteOffset());
   }
 }

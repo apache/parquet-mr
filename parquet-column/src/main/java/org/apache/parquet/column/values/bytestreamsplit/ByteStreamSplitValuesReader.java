@@ -19,6 +19,8 @@
 package org.apache.parquet.column.values.bytestreamsplit;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import org.apache.parquet.bytes.ByteBufferInputStream;
 import org.apache.parquet.column.values.ValuesReader;
 import org.apache.parquet.io.ParquetDecodingException;
@@ -26,10 +28,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public abstract class ByteStreamSplitValuesReader extends ValuesReader {
-
   private static final Logger LOG = LoggerFactory.getLogger(ByteStreamSplitValuesReader.class);
-  private final int elementSizeInBytes;
-  private byte[] byteStreamData;
+  protected final int elementSizeInBytes;
+  protected ByteBuffer decodedDataBuffer;
   private int indexInStream;
   private int valuesCount;
 
@@ -39,17 +40,27 @@ public abstract class ByteStreamSplitValuesReader extends ValuesReader {
     this.valuesCount = 0;
   }
 
-  protected void gatherElementDataFromStreams(byte[] gatheredData) throws ParquetDecodingException {
-    if (gatheredData.length != elementSizeInBytes) {
-      throw new ParquetDecodingException("gatherData buffer is not of the expected size.");
-    }
+  protected int nextElementByteOffset() {
     if (indexInStream >= valuesCount) {
       throw new ParquetDecodingException("Byte-stream data was already exhausted.");
     }
-    for (int i = 0; i < elementSizeInBytes; ++i) {
-      gatheredData[i] = byteStreamData[i * valuesCount + indexInStream];
-    }
+    int offset = indexInStream * elementSizeInBytes;
     ++indexInStream;
+    return offset;
+  }
+
+  // Decode an entire data page
+  private byte[] decodeData(ByteBuffer encoded, int valuesCount) {
+    assert encoded.limit() == valuesCount * elementSizeInBytes;
+    byte[] decoded = new byte[encoded.limit()];
+    int destByteIndex = 0;
+    for (int srcValueIndex = 0; srcValueIndex < valuesCount; ++srcValueIndex) {
+      for (int stream = 0; stream < elementSizeInBytes; ++stream, ++destByteIndex) {
+        decoded[destByteIndex] = encoded.get(srcValueIndex + stream * valuesCount);
+      }
+    }
+    assert destByteIndex == decoded.length;
+    return decoded;
   }
 
   @Override
@@ -76,18 +87,12 @@ public abstract class ByteStreamSplitValuesReader extends ValuesReader {
       throw new ParquetDecodingException(errorMessage);
     }
 
-    // Allocate buffer for all of the byte stream data.
+    // Eagerly read and decode the data. This allows returning stable
+    // Binary views into the internal decode buffer for FIXED_LEN_BYTE_ARRAY.
     final int totalSizeInBytes = stream.available();
-    byteStreamData = new byte[totalSizeInBytes];
-
-    // Eagerly read the data for each stream.
-    final int numRead = stream.read(byteStreamData, 0, totalSizeInBytes);
-    if (numRead != totalSizeInBytes) {
-      String errorMessage = String.format(
-          "Failed to read requested number of bytes. Expected: %d. Read %d.", totalSizeInBytes, numRead);
-      throw new ParquetDecodingException(errorMessage);
-    }
-
+    final ByteBuffer encodedData = stream.slice(totalSizeInBytes).slice(); // possibly zero-copy
+    final byte[] decodedData = decodeData(encodedData, this.valuesCount);
+    decodedDataBuffer = ByteBuffer.wrap(decodedData).order(ByteOrder.LITTLE_ENDIAN);
     indexInStream = 0;
   }
 
