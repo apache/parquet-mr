@@ -296,8 +296,8 @@ public class AvroSchemaConverter {
   }
 
   private Schema convertFields(String name, List<Type> parquetFields, Map<String, Integer> names) {
+    String ns = namespace(name, names);
     List<Schema.Field> fields = new ArrayList<Schema.Field>();
-    Integer nameCount = names.merge(name, 1, (oldValue, value) -> oldValue + 1);
     for (Type parquetType : parquetFields) {
       Schema fieldSchema = convertField(parquetType, names);
       if (parquetType.isRepetition(REPEATED)) { // If a repeated field is ungrouped, treat as REQUIRED per spec
@@ -308,7 +308,7 @@ public class AvroSchemaConverter {
         fields.add(new Schema.Field(parquetType.getName(), fieldSchema, null, (Object) null));
       }
     }
-    Schema schema = Schema.createRecord(name, null, nameCount > 1 ? name + nameCount : null, false);
+    Schema schema = Schema.createRecord(name, null, ns, false);
     schema.setFields(fields);
     return schema;
   }
@@ -360,7 +360,9 @@ public class AvroSchemaConverter {
                 return Schema.create(Schema.Type.STRING);
               } else {
                 int size = parquetType.asPrimitiveType().getTypeLength();
-                return Schema.createFixed(parquetType.getName(), null, null, size);
+                String name = parquetType.getName();
+                String ns = namespace(name, names);
+                return Schema.createFixed(name, null, ns, size);
               }
             }
 
@@ -594,5 +596,10 @@ public class AvroSchemaConverter {
       return fieldName;
     }
     return path + '.' + fieldName;
+  }
+
+  private static String namespace(String name, Map<String, Integer> names) {
+    Integer nameCount = names.merge(name, 1, (oldValue, value) -> oldValue + 1);
+    return nameCount > 1 ? name + nameCount : null;
   }
 }
