@@ -1656,6 +1656,7 @@ public class ParquetFileWriter implements AutoCloseable {
   @Override
   public void close() throws IOException {
     try {
+      out.flush();
       out.close();
     } finally {
       if (crcAllocator != null) {
