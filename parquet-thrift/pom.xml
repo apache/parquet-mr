@@ -77,6 +77,10 @@
           <groupId>com.hadoop.gplcompression</groupId>
           <artifactId>hadoop-lzo</artifactId>
         </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+        </exclusion>
       </exclusions>
     </dependency>
     <dependency>
@@ -154,6 +158,12 @@
       <artifactId>libthrift</artifactId>
       <version>${thrift.version}</version>
       <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
