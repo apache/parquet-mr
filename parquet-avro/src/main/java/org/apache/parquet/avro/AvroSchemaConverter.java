@@ -128,6 +128,9 @@ public class AvroSchemaConverter {
   public static Schema getNonNull(Schema schema) {
     if (schema.getType().equals(Schema.Type.UNION)) {
       List<Schema> schemas = schema.getTypes();
+      for (Schema s: schemas) {
+        schema.getObjectProps().forEach(s::addProp);
+      }
       if (schemas.size() == 2) {
         if (schemas.get(0).getType().equals(Schema.Type.NULL)) {
           return schemas.get(1);
