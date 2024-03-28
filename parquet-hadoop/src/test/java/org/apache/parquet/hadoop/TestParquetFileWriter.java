@@ -115,10 +115,19 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Verify that data can be written and read back again.
+ * The test suite is parameterized on vector IO being disabled/enabled.
+ * This verifies that the vector IO code path is correct, and that
+ * the default path continues to work.
+ */
+@RunWith(Parameterized.class)
 public class TestParquetFileWriter {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestParquetFileWriter.class);
@@ -151,6 +160,35 @@ public class TestParquetFileWriter {
 
   @Rule
   public final TemporaryFolder temp = new TemporaryFolder();
+
+  @Parameterized.Parameters(name = "vectored : {0}")
+  public static List<Boolean> params() {
+    return Arrays.asList(true, false);
+  }
+
+  /**
+   * Read type: true for vectored IO.
+   */
+  private final boolean vectoredRead;
+
+  /**
+   * Instantiate.
+   * @param vectoredRead use vector IO for reading.
+   */
+  public TestParquetFileWriter(boolean vectoredRead) {
+    this.vectoredRead = vectoredRead;
+  }
+
+  /**
+   * Get the configuration for the tests.
+   * @return a configuration which may have vector IO set.
+   */
+  private Configuration getTestConfiguration() {
+    Configuration conf = new Configuration();
+    // set the vector IO option
+    conf.setBoolean(ParquetInputFormat.HADOOP_VECTORED_IO_ENABLED, vectoredRead);
+    return conf;
+  }
 
   private TrackingByteBufferAllocator allocator;
 
@@ -217,7 +255,7 @@ public class TestParquetFileWriter {
     testFile.delete();
 
     Path path = new Path(testFile.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
 
     ParquetFileWriter w = createWriter(configuration, SCHEMA, path);
     w.start();
@@ -317,7 +355,7 @@ public class TestParquetFileWriter {
     testFile.delete();
 
     Path path = new Path(testFile.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
 
     ParquetFileWriter w = createWriter(configuration, SCHEMA, path);
     w.start();
@@ -415,7 +453,7 @@ public class TestParquetFileWriter {
     File testFile = temp.newFile();
     testFile.delete();
     Path path = new Path(testFile.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
     configuration.set("parquet.bloom.filter.column.names", "foo");
     String[] colPath = {"foo"};
     ColumnDescriptor col = schema.getColumnDescription(colPath);
@@ -456,7 +494,7 @@ public class TestParquetFileWriter {
     testFile.delete();
 
     Path path = new Path(testFile.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
 
     ParquetFileWriter w = createWriter(configuration, SCHEMA, path);
     w.start();
@@ -569,7 +607,7 @@ public class TestParquetFileWriter {
     File testFile = temp.newFile();
 
     Path path = new Path(testFile.toURI());
-    Configuration conf = new Configuration();
+    Configuration conf = getTestConfiguration();
     // Disable writing out checksums as hardcoded byte offsets in assertions below expect it
     conf.setBoolean(ParquetOutputFormat.PAGE_WRITE_CHECKSUM_ENABLED, false);
 
@@ -611,9 +649,11 @@ public class TestParquetFileWriter {
     FileSystem fs = path.getFileSystem(conf);
     long fileLen = fs.getFileStatus(path).getLen();
 
-    FSDataInputStream data = fs.open(path);
-    data.seek(fileLen - 8); // 4-byte offset + "PAR1"
-    long footerLen = BytesUtils.readIntLittleEndian(data);
+    long footerLen;
+    try (FSDataInputStream data = fs.open(path)) {
+      data.seek(fileLen - 8); // 4-byte offset + "PAR1"
+      footerLen = BytesUtils.readIntLittleEndian(data);
+    }
     long startFooter = fileLen - footerLen - 8;
 
     assertEquals("Footer should start after second row group without padding", secondRowGroupEnds, startFooter);
@@ -693,9 +733,11 @@ public class TestParquetFileWriter {
     File testFile = temp.newFile();
 
     Path path = new Path(testFile.toURI());
-    Configuration conf = new Configuration();
+    Configuration conf = getTestConfiguration();
     // Disable writing out checksums as hardcoded byte offsets in assertions below expect it
     conf.setBoolean(ParquetOutputFormat.PAGE_WRITE_CHECKSUM_ENABLED, false);
+    // close any filesystems to ensure that the the FS used by the writer picks up the configuration
+    FileSystem.closeAll();
 
     // uses the test constructor
     ParquetFileWriter w = createWriter(conf, SCHEMA, path, 100, 50);
@@ -735,9 +777,11 @@ public class TestParquetFileWriter {
     FileSystem fs = path.getFileSystem(conf);
     long fileLen = fs.getFileStatus(path).getLen();
 
-    FSDataInputStream data = fs.open(path);
-    data.seek(fileLen - 8); // 4-byte offset + "PAR1"
-    long footerLen = BytesUtils.readIntLittleEndian(data);
+    long footerLen;
+    try (FSDataInputStream data = fs.open(path)) {
+      data.seek(fileLen - 8); // 4-byte offset + "PAR1"
+      footerLen = BytesUtils.readIntLittleEndian(data);
+    }
     long startFooter = fileLen - footerLen - 8;
 
     assertEquals("Footer should start after second row group without padding", secondRowGroupEnds, startFooter);
@@ -842,7 +886,7 @@ public class TestParquetFileWriter {
     testFile.delete();
 
     Path path = new Path(testFile.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
     configuration.setBoolean("parquet.strings.signed-min-max.enabled", true);
 
     MessageType schema = MessageTypeParser.parseMessageType(
@@ -936,7 +980,7 @@ public class TestParquetFileWriter {
     File testDir = temp.newFolder();
 
     Path testDirPath = new Path(testDir.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
 
     final FileSystem fs = testDirPath.getFileSystem(configuration);
     enforceEmptyDir(configuration, testDirPath);
@@ -990,10 +1034,12 @@ public class TestParquetFileWriter {
     Path path = new Path(testFile.toURI());
 
     MessageType schema = MessageTypeParser.parseMessageType(writeSchema);
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
     configuration.setBoolean("parquet.strings.signed-min-max.enabled", true);
     GroupWriteSupport.setSchema(schema, configuration);
 
+    // close any filesystems to ensure that the the FS used by the writer picks up the configuration
+    FileSystem.closeAll();
     ParquetWriter<Group> writer = new ParquetWriter<Group>(path, configuration, new GroupWriteSupport());
 
     Group r1 = new SimpleGroup(schema);
@@ -1186,7 +1232,7 @@ public class TestParquetFileWriter {
    */
   @Test
   public void testWriteMetadataFileWithRelativeOutputPath() throws IOException {
-    Configuration conf = new Configuration();
+    Configuration conf = getTestConfiguration();
     FileSystem fs = FileSystem.get(conf);
     Path relativeRoot = new Path("target/_test_relative");
     Path qualifiedRoot = fs.makeQualified(relativeRoot);
@@ -1219,7 +1265,7 @@ public class TestParquetFileWriter {
     testFile.delete();
 
     Path path = new Path(testFile.toURI());
-    Configuration configuration = new Configuration();
+    Configuration configuration = getTestConfiguration();
 
     ParquetFileWriter w = new ParquetFileWriter(
         configuration,

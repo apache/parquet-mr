@@ -161,6 +161,17 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
 
   private static final int MIN_FOOTER_CACHE_SIZE = 100;
 
+  /**
+   * Key to enable/disable vectored io while reading parquet files:
+   * {@value}.
+   */
+  public static final String HADOOP_VECTORED_IO_ENABLED = "parquet.hadoop.vectored.io.enabled";
+
+  /**
+   * Default value of parquet.hadoop.vectored.io.enabled is {@value}.
+   */
+  public static final boolean HADOOP_VECTORED_IO_DEFAULT = false;
+
   public static void setTaskSideMetaData(Job job, boolean taskSideMetadata) {
     ContextUtil.getConfiguration(job).setBoolean(TASK_SIDE_METADATA, taskSideMetadata);
   }

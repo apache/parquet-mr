@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -62,9 +63,16 @@ import org.apache.parquet.hadoop.util.ContextUtil;
 import org.apache.parquet.schema.MessageTypeParser;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Parameterized on Vectored IO enabled/disabled so can verify that
+ * ranged reads work through the bridge on compatible hadoop versions.
+ */
+@RunWith(Parameterized.class)
 public class TestInputOutputFormat {
   private static final Logger LOG = LoggerFactory.getLogger(TestInputOutputFormat.class);
 
@@ -81,9 +89,25 @@ public class TestInputOutputFormat {
   private Class<? extends Mapper<?, ?, ?, ?>> readMapperClass;
   private Class<? extends Mapper<?, ?, ?, ?>> writeMapperClass;
 
+  @Parameterized.Parameters(name = "vectored : {0}")
+  public static List<Boolean> params() {
+    return Arrays.asList(true, false);
+  }
+
+  /**
+   * Read type: true for vectored IO.
+   */
+  private final boolean readType;
+
+  public TestInputOutputFormat(boolean readType) {
+    this.readType = readType;
+  }
+
   @Before
   public void setUp() {
     conf = new Configuration();
+    // set the vector IO option
+    conf.setBoolean(ParquetInputFormat.HADOOP_VECTORED_IO_ENABLED, readType);
     writeSchema = "message example {\n" + "required int32 line;\n" + "required binary content;\n" + "}";
 
     readSchema = "message example {\n" + "required int32 line;\n" + "required binary content;\n" + "}";
@@ -342,7 +366,10 @@ public class TestInputOutputFormat {
 
     assertTrue(value(readJob, "parquet", "bytesread") > 0L);
     assertTrue(value(readJob, "parquet", "bytestotal") > 0L);
-    assertTrue(value(readJob, "parquet", "bytesread") == value(readJob, "parquet", "bytestotal"));
+    assertEquals(
+        "bytestotal != bytesread",
+        value(readJob, "parquet", "bytestotal"),
+        value(readJob, "parquet", "bytesread"));
     // not testing the time read counter since it could be zero due to the size of data is too small
   }
 

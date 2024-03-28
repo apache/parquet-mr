@@ -28,8 +28,12 @@ import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
 import org.apache.parquet.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DynMethods {
+
+  private static final Logger LOG = LoggerFactory.getLogger(DynMethods.class);
 
   /**
    * Convenience wrapper class around {@link java.lang.reflect.Method}.
@@ -240,7 +244,8 @@ public class DynMethods {
         Class<?> targetClass = Class.forName(className, true, loader);
         impl(targetClass, methodName, argClasses);
       } catch (ClassNotFoundException e) {
-        // not the right implementation
+        // class not found on supplied classloader.
+        LOG.debug("failed to load class {}", className, e);
       }
       return this;
     }
@@ -277,6 +282,7 @@ public class DynMethods {
         this.method = new UnboundMethod(targetClass.getMethod(methodName, argClasses), name);
       } catch (NoSuchMethodException e) {
         // not the right implementation
+        LOG.debug("failed to load method {} from class {}", methodName, targetClass, e);
       }
       return this;
     }
@@ -307,6 +313,7 @@ public class DynMethods {
             .buildChecked();
       } catch (NoSuchMethodException e) {
         // not the right implementation
+        LOG.debug("failed to load constructor arity {} from class {}", argClasses.length, targetClass, e);
       }
       return this;
     }
@@ -323,6 +330,7 @@ public class DynMethods {
             .buildChecked();
       } catch (NoSuchMethodException e) {
         // not the right implementation
+        LOG.debug("failed to load constructor arity {} from class {}", argClasses.length, className, e);
       }
       return this;
     }
@@ -345,7 +353,8 @@ public class DynMethods {
         Class<?> targetClass = Class.forName(className, true, loader);
         hiddenImpl(targetClass, methodName, argClasses);
       } catch (ClassNotFoundException e) {
-        // not the right implementation
+        // class not found on supplied classloader.
+        LOG.debug("failed to load class {}", className, e);
       }
       return this;
     }
@@ -384,6 +393,7 @@ public class DynMethods {
         this.method = new UnboundMethod(hidden, name);
       } catch (SecurityException | NoSuchMethodException e) {
         // unusable or not the right implementation
+        LOG.debug("failed to load method {} from class {}", methodName, targetClass, e);
       }
       return this;
     }

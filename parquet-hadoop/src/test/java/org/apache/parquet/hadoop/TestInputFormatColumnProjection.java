@@ -25,6 +25,8 @@ import static org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -50,7 +52,14 @@ import org.junit.Assume;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+/**
+ * Parameterized on Vectored IO enabled/disabled so can verify that
+ * ranged reads work through the bridge on compatible hadoop versions.
+ */
+@RunWith(Parameterized.class)
 public class TestInputFormatColumnProjection {
   public static final String FILE_CONTENT = "" + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ,"
       + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ,"
@@ -99,6 +108,20 @@ public class TestInputFormatColumnProjection {
   @Rule
   public TemporaryFolder temp = new TemporaryFolder();
 
+  @Parameterized.Parameters(name = "vectored : {0}")
+  public static List<Boolean> params() {
+    return Arrays.asList(true, false);
+  }
+
+  /**
+   * Read type: true for vectored IO.
+   */
+  private final boolean readType;
+
+  public TestInputFormatColumnProjection(boolean readType) {
+    this.readType = readType;
+  }
+
   @Test
   public void testProjectionSize() throws Exception {
     Assume.assumeTrue( // only run this test for Hadoop 2
@@ -117,6 +140,8 @@ public class TestInputFormatColumnProjection {
     outputFolder.delete();
 
     Configuration conf = new Configuration();
+    // set the vector IO option
+    conf.setBoolean(ParquetInputFormat.HADOOP_VECTORED_IO_ENABLED, readType);
     // set the projection schema
     conf.set(
         "parquet.read.schema",
@@ -171,7 +196,10 @@ public class TestInputFormatColumnProjection {
       bytesRead = Reader.bytesReadCounter.getValue();
     }
 
-    Assert.assertTrue("Should read less than 10% of the input file size", bytesRead < (bytesWritten / 10));
+    Assert.assertTrue(
+        "Should read (" + bytesRead + " bytes)" + " less than 10% of the input file size (" + bytesWritten
+            + ")",
+        bytesRead < (bytesWritten / 10));
   }
 
   private void waitForJob(Job job) throws Exception {

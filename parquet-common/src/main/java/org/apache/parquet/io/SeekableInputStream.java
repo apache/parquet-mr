@@ -23,6 +23,8 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.util.List;
+import org.apache.parquet.bytes.ByteBufferAllocator;
 
 /**
  * {@code SeekableInputStream} is an interface with the methods needed by
@@ -104,4 +106,25 @@ public abstract class SeekableInputStream extends InputStream {
    *                      fill the buffer, {@code buf.remaining()}
    */
   public abstract void readFully(ByteBuffer buf) throws IOException;
+
+  /**
+   * Read a set of file ranges in a vectored manner.
+   *
+   * @param ranges the list of file ranges to read
+   * @param allocator the allocator to use for allocating ByteBuffers
+   * @throws UnsupportedOperationException if not available in this class/runtime (default)
+   */
+  public void readVectored(List<ParquetFileRange> ranges, final ByteBufferAllocator allocator) throws IOException {
+
+    throw new UnsupportedOperationException("Vectored IO is not supported for " + this);
+  }
+
+  /**
+   * Is the {@link #readVectored(List, ByteBufferAllocator)} method available?
+   * @param allocator the allocator to use for allocating ByteBuffers
+   * @return True if the operation is considered available for this allocator in the hadoop runtime.
+   */
+  public boolean readVectoredAvailable(final ByteBufferAllocator allocator) {
+    return false;
+  }
 }
