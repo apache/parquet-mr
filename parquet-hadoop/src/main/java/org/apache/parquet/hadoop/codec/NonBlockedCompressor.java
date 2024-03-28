@@ -30,6 +30,8 @@ import org.apache.parquet.Preconditions;
  */
 public abstract class NonBlockedCompressor implements Compressor {
 
+  private static final int INITIAL_INPUT_BUFFER_SIZE = 4096;
+
   // Buffer for compressed output. This buffer grows as necessary.
   private ByteBuffer outputBuffer = ByteBuffer.allocateDirect(0);
 
@@ -100,7 +102,14 @@ public abstract class NonBlockedCompressor implements Compressor {
         !outputBuffer.hasRemaining(), "Output buffer should be empty. Caller must call compress()");
 
     if (inputBuffer.capacity() - inputBuffer.position() < len) {
-      ByteBuffer tmp = ByteBuffer.allocateDirect(inputBuffer.position() + len);
+      final int newBufferSize;
+      if (inputBuffer.capacity() == 0) {
+        newBufferSize = Math.max(INITIAL_INPUT_BUFFER_SIZE, len);
+      } else {
+        newBufferSize = Math.max(inputBuffer.position() + len, inputBuffer.capacity() * 2);
+      }
+      ByteBuffer tmp = ByteBuffer.allocateDirect(newBufferSize);
+      tmp.limit(inputBuffer.position() + len);
       inputBuffer.rewind();
       tmp.put(inputBuffer);
       ByteBuffer oldBuffer = inputBuffer;

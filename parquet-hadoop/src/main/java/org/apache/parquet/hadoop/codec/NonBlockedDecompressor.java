@@ -25,6 +25,8 @@ import org.apache.parquet.Preconditions;
 
 public abstract class NonBlockedDecompressor implements Decompressor {
 
+  private static final int INITIAL_INPUT_BUFFER_SIZE = 4096;
+
   // Buffer for uncompressed output. This buffer grows as necessary.
   private ByteBuffer outputBuffer = ByteBuffer.allocateDirect(0);
 
@@ -105,7 +107,14 @@ public abstract class NonBlockedDecompressor implements Decompressor {
     SnappyUtil.validateBuffer(buffer, off, len);
 
     if (inputBuffer.capacity() - inputBuffer.position() < len) {
-      final ByteBuffer newBuffer = ByteBuffer.allocateDirect(inputBuffer.position() + len);
+      final int newBufferSize;
+      if (inputBuffer.capacity() == 0) {
+        newBufferSize = Math.max(INITIAL_INPUT_BUFFER_SIZE, len);
+      } else {
+        newBufferSize = Math.max(inputBuffer.position() + len, inputBuffer.capacity() * 2);
+      }
+      final ByteBuffer newBuffer = ByteBuffer.allocateDirect(newBufferSize);
+      newBuffer.limit(inputBuffer.position() + len);
       inputBuffer.rewind();
       newBuffer.put(inputBuffer);
       final ByteBuffer oldBuffer = inputBuffer;
