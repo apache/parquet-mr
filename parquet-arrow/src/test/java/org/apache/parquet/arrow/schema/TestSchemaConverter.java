@@ -42,6 +42,7 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.arrow.schema.SchemaMapping.ListTypeMapping;
 import org.apache.parquet.arrow.schema.SchemaMapping.PrimitiveTypeMapping;
 import org.apache.parquet.arrow.schema.SchemaMapping.RepeatedTypeMapping;
@@ -572,7 +573,9 @@ public class TestSchemaConverter {
 
   @Test
   public void testParquetInt96ToArrowTimestamp() {
-    final SchemaConverter converterInt96ToTimestamp = new SchemaConverter(true);
+    final Configuration configuration = new Configuration(false);
+    configuration.setBoolean(SchemaConverter.CONVERT_INT96_TO_ARROW_TIMESTAMP, true);
+    final SchemaConverter converterInt96ToTimestamp = new SchemaConverter(configuration);
     MessageType parquet =
         Types.buildMessage().addField(Types.optional(INT96).named("a")).named("root");
     Schema expected = new Schema(asList(field("a", new ArrowType.Timestamp(TimeUnit.NANOSECOND, null))));

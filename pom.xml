@@ -598,6 +598,7 @@
 
               <!-- Due to the removal of deprecated methods -->
               <exclude>org.apache.parquet.arrow.schema.SchemaMapping</exclude>
+              <exclude>org.apache.parquet.arrow.schema.SchemaConverter</exclude>
 
               <exclude>org.apache.parquet.thrift.struct.ThriftType</exclude>
 
