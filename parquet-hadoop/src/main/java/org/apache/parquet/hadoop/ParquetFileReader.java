@@ -695,7 +695,13 @@ public class ParquetFileReader implements Closeable {
    * @throws IOException if there is an error while opening the file
    */
   public static ParquetFileReader open(InputFile file) throws IOException {
-    return new ParquetFileReader(file, ParquetReadOptions.builder().build());
+    ParquetReadOptions options;
+    if (file instanceof HadoopInputFile) {
+      options = HadoopReadOptions.builder(((HadoopInputFile) file).getConfiguration()).build();
+    } else {
+      options = ParquetReadOptions.builder().build();
+    }
+    return new ParquetFileReader(file, options);
   }
 
   /**
