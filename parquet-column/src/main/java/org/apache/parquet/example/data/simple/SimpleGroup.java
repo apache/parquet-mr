@@ -129,13 +129,17 @@ public class SimpleGroup extends Group {
   }
 
   private void add(int fieldIndex, Primitive value) {
+    checkType(fieldIndex);
+    data[fieldIndex].add(value);
+  }
+
+  private void checkType(int fieldIndex) {
     Type type = schema.getType(fieldIndex);
     List<Object> list = data[fieldIndex];
     if (!type.isRepetition(Type.Repetition.REPEATED) && !list.isEmpty()) {
       throw new IllegalStateException(
           "field " + fieldIndex + " (" + type.getName() + ") can not have more than one value: " + list);
     }
-    list.add(value);
   }
 
   @Override
@@ -246,6 +250,7 @@ public class SimpleGroup extends Group {
 
   @Override
   public void add(int fieldIndex, Group value) {
+    checkType(fieldIndex);
     data[fieldIndex].add(value);
   }
 
