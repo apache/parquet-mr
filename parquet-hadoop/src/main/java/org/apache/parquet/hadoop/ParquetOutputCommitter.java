@@ -77,6 +77,10 @@ public class ParquetOutputCommitter extends FileOutputCommitter {
       // If there are no footers, _metadata file cannot be written since there is no way to determine schema!
       // Onus of writing any summary files lies with the caller in this case.
       if (footers.isEmpty()) {
+        // Delete output dir in case write empty records.
+        if (configuration.getBoolean(ParquetOutputFormat.SKIP_EMPTY_FILE, true)) {
+          fileSystem.delete(outputPath, true);
+        }
         return;
       }
 
