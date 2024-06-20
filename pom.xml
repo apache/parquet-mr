@@ -83,8 +83,7 @@
     <!-- scala.binary.version is used for projects that fetch dependencies that are in scala -->
     <scala.binary.version>2.12</scala.binary.version>
     <scala.maven.test.skip>false</scala.maven.test.skip>
-    <pig.version>0.16.0</pig.version>
-    <pig.classifier>h2</pig.classifier>
+    <pig.version>0.17.0</pig.version>
     <thrift-maven-plugin.version>0.10.0</thrift-maven-plugin.version>
     <thrift.version>0.20.0</thrift.version>
     <format.thrift.version>${thrift.version}</format.thrift.version>
