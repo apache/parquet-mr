@@ -48,6 +48,7 @@ public final class ColumnPath implements Iterable<String>, Serializable {
   private final String[] p;
 
   private ColumnPath(String[] path) {
+    // No need to copy the array here as the only published ColumnPath instances are created by the toCanonical method
     this.p = path;
   }
 
@@ -83,6 +84,6 @@ public final class ColumnPath implements Iterable<String>, Serializable {
   }
 
   public String[] toArray() {
-    return p;
+    return p.clone();
   }
 }
