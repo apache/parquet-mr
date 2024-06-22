@@ -550,7 +550,7 @@ public class ParquetMetadataConverter {
       ColumnMetaData metaData = new ColumnMetaData(
           getType(columnMetaData.getType()),
           toFormatEncodings(columnMetaData.getEncodings()),
-          Arrays.asList(columnMetaData.getPath().toArray()),
+          columnMetaData.getPath().toList(),
           toFormatCodec(columnMetaData.getCodec()),
           columnMetaData.getValueCount(),
           columnMetaData.getTotalUncompressedSize(),

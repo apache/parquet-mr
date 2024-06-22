@@ -20,7 +20,9 @@ package org.apache.parquet.hadoop.metadata;
 
 import java.io.Serializable;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Objects;
 
 public final class ColumnPath implements Iterable<String>, Serializable {
@@ -85,5 +87,9 @@ public final class ColumnPath implements Iterable<String>, Serializable {
 
   public String[] toArray() {
     return p.clone();
+  }
+
+  public List<String> toList() {
+    return Collections.unmodifiableList(Arrays.asList(p));
   }
 }
