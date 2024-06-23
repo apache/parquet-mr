@@ -144,10 +144,10 @@ public class AvroReadSupport<T> extends ReadSupport<T> {
       avroSchema = new Schema.Parser().parse(metadata.get(AVRO_READ_SCHEMA_METADATA_KEY));
     } else if (keyValueMetaData.get(AVRO_SCHEMA_METADATA_KEY) != null) {
       // use the Avro schema from the file metadata if present
-      avroSchema = new Schema.Parser().parse(keyValueMetaData.get(AVRO_SCHEMA_METADATA_KEY));
+      avroSchema = new Schema.Parser().setValidateDefaults(false).parse(keyValueMetaData.get(AVRO_SCHEMA_METADATA_KEY));
     } else if (keyValueMetaData.get(OLD_AVRO_SCHEMA_METADATA_KEY) != null) {
       // use the Avro schema from the file metadata if present
-      avroSchema = new Schema.Parser().parse(keyValueMetaData.get(OLD_AVRO_SCHEMA_METADATA_KEY));
+      avroSchema = new Schema.Parser().setValidateDefaults(false).parse(keyValueMetaData.get(OLD_AVRO_SCHEMA_METADATA_KEY));
     } else {
       // default to converting the Parquet schema into an Avro schema
       avroSchema = new AvroSchemaConverter(configuration).convert(parquetSchema);
