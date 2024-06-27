@@ -30,7 +30,8 @@ import re
 import subprocess
 import sys
 import tempfile
-import urllib2
+import urllib.error
+import urllib.request
 import getpass
 
 try:
@@ -42,18 +43,18 @@ except ImportError:
 # Location of your Parquet git development area
 PARQUET_HOME = os.path.abspath(__file__).rsplit("/", 2)[0]
 PROJECT_NAME = PARQUET_HOME.rsplit("/", 1)[1]
-print "PARQUET_HOME = " + PARQUET_HOME
-print "PROJECT_NAME = " + PROJECT_NAME
+print("PARQUET_HOME = " + PARQUET_HOME)
+print("PROJECT_NAME = " + PROJECT_NAME)
 
 def lines_from_cmd(cmd):
-    return subprocess.check_output(cmd.split(" ")).strip().split("\n")
+    return subprocess.check_output(cmd.split(" ")).decode('utf-8').strip().split("\n")
 
 # Remote name which points to the GitHub site
 PR_REMOTE_NAME = os.environ.get("PR_REMOTE_NAME")
 available_remotes = lines_from_cmd("git remote")
 if PR_REMOTE_NAME is not None:
     if PR_REMOTE_NAME not in available_remotes:
-        print "ERROR: git remote '%s' is not defined." % PR_REMOTE_NAME
+        print("ERROR: git remote '%s' is not defined." % PR_REMOTE_NAME)
         sys.exit(-1)
 else:
     remote_candidates = ["github-apache", "apache-github"]
@@ -61,7 +62,7 @@ else:
     PR_REMOTE_NAME = next((remote for remote in available_remotes if remote in remote_candidates), None)
 
 # Remote name which points to Apache git
-PUSH_REMOTE_NAME = os.environ.get("PUSH_REMOTE_NAME", "apache")
+PUSH_REMOTE_NAME = os.environ.get("PUSH_REMOTE_NAME", "apache-github")
 # ASF JIRA username
 JIRA_USERNAME = os.environ.get("JIRA_USERNAME")
 # ASF JIRA password
@@ -79,35 +80,35 @@ os.chdir(PARQUET_HOME)
 
 def get_json(url):
     try:
-        return json.load(urllib2.urlopen(url))
-    except urllib2.HTTPError as e:
-        print "Unable to fetch URL, exiting: %s" % url
+        return json.load(urllib.request.urlopen(url))
+    except urllib2.error.HTTPError as e:
+        print("Unable to fetch URL, exiting: %s" % url)
         sys.exit(-1)
 
 
 def fail(msg):
-    print msg
+    print(msg)
     clean_up()
     sys.exit(-1)
 
 
 def run_cmd(cmd):
-    try:       
+    try:
         if isinstance(cmd, list):
-            return subprocess.check_output(cmd)
+            return subprocess.check_output(cmd).decode("utf-8")
         else:
-            return subprocess.check_output(cmd.split(" "))
+            return subprocess.check_output(cmd.split(" ")).decode("utf-8")
     except subprocess.CalledProcessError as e:
         # this avoids hiding the stdout / stderr of failed processes
-        print 'Command failed: %s' % cmd
-        print 'With output:'
-        print '--------------'
-        print e.output
-        print '--------------'
+        print('Command failed: %s' % cmd)
+        print('With output:')
+        print('--------------')
+        print(e.output)
+        print('--------------')
         raise e
 
 def continue_maybe(prompt):
-    result = raw_input("\n%s (y/n): " % prompt)
+    result = input("\n%s (y/n): " % prompt)
     if result.lower() != "y":
         fail("Okay, exiting")
 
@@ -116,13 +117,13 @@ original_head = run_cmd("git rev-parse HEAD")[:8]
 
 
 def clean_up():
-    print "Restoring head pointer to %s" % original_head
+    print("Restoring head pointer to %s" % original_head)
     run_cmd("git checkout %s" % original_head)
 
     branches = run_cmd("git branch").replace(" ", "").split("\n")
 
     for branch in filter(lambda x: x.startswith(BRANCH_PREFIX), branches):
-        print "Deleting local branch %s" % branch
+        print("Deleting local branch %s" % branch)
         run_cmd("git branch -D %s" % branch)
 
 
@@ -130,6 +131,13 @@ def clean_up():
 def merge_pr(pr_num, target_ref):
     pr_branch_name = "%s_MERGE_PR_%s" % (BRANCH_PREFIX, pr_num)
     target_branch_name = "%s_MERGE_PR_%s_%s" % (BRANCH_PREFIX, pr_num, target_ref.upper())
+    existing_branches = lines_from_cmd("git branch")
+    if pr_branch_name in existing_branches or target_branch_name in existing_branches:
+      continue_maybe("%s or %s already exist. Should we continue and delete them" % 
+                     (pr_branch_name, target_branch_name))
+      run_cmd("git branch -D %s" % pr_branch_name)
+      run_cmd("git branch -D %s" % target_branch_name)
+
     run_cmd("git fetch %s pull/%s/head:%s" % (PR_REMOTE_NAME, pr_num, pr_branch_name))
     run_cmd("git fetch %s %s:%s" % (PUSH_REMOTE_NAME, target_ref, target_branch_name))
     run_cmd("git checkout %s" % target_branch_name)
@@ -145,12 +153,12 @@ def merge_pr(pr_num, target_ref):
         had_conflicts = True
 
     commit_authors = run_cmd(['git', 'log', 'HEAD..%s' % pr_branch_name,
-                             '--pretty=format:%an <%ae>']).split("\n")
+                              '--pretty=format:%an <%ae>']).split("\n")
     distinct_authors = sorted(set(commit_authors),
                               key=lambda x: commit_authors.count(x), reverse=True)
     primary_author = distinct_authors[0]
     commits = run_cmd(['git', 'log', 'HEAD..%s' % pr_branch_name,
-                      '--pretty=format:%h [%an] %s']).split("\n\n")
+                       '--pretty=format:%h [%an] %s']).split("\n\n")
 
     merge_message_flags = []
 
@@ -195,7 +203,7 @@ def merge_pr(pr_num, target_ref):
 
 
 def cherry_pick(pr_num, merge_hash, default_branch):
-    pick_ref = raw_input("Enter a branch name [%s]: " % default_branch)
+    pick_ref = input("Enter a branch name [%s]: " % default_branch)
     if pick_ref == "":
         pick_ref = default_branch
 
@@ -232,7 +240,7 @@ def fix_version_from_branch(branch, versions):
 
 def exctract_jira_id(title):
     m = re.search(r'^(PARQUET-[0-9]+)\b.*$', title, re.IGNORECASE)
-    if m and m.groups > 0:
+    if m and len(m.groups()) > 0:
         return m.group(1).upper()
     else:
         fail("PR title should be prefixed by a jira id \"PARQUET-XXX: ...\", found: \"%s\"" % title)
@@ -252,7 +260,7 @@ def resolve_jira(title, merge_branches, comment):
 
     default_jira_id = exctract_jira_id(title)
 
-    jira_id = raw_input("Enter a JIRA id [%s]: " % default_jira_id)
+    jira_id = input("Enter a JIRA id [%s]: " % default_jira_id)
     if jira_id == "":
         jira_id = default_jira_id
 
@@ -277,7 +285,7 @@ def resolve_jira(title, merge_branches, comment):
 
     versions = asf_jira.project_versions("PARQUET")
     versions = sorted(versions, key=lambda x: x.name, reverse=True)
-    versions = filter(lambda x: x.raw['released'] is False, versions)
+    versions = list(filter(lambda x: x.raw['released'] is False, versions))
 
     default_fix_versions = map(lambda x: fix_version_from_branch(x, versions).name, merge_branches)
     for v in default_fix_versions:
@@ -292,7 +300,7 @@ def resolve_jira(title, merge_branches, comment):
                 default_fix_versions = filter(lambda x: x != v, default_fix_versions)
     default_fix_versions = ",".join(default_fix_versions)
 
-    fix_versions = raw_input("Enter comma-separated fix version(s) [%s]: " % default_fix_versions)
+    fix_versions = input("Enter comma-separated fix version(s) [%s]: " % default_fix_versions)
     if fix_versions == "":
         fix_versions = default_fix_versions
     fix_versions = fix_versions.replace(" ", "").split(",")
@@ -306,15 +314,15 @@ def resolve_jira(title, merge_branches, comment):
     asf_jira.transition_issue(
         jira_id, resolve["id"], fixVersions=jira_fix_versions, comment=comment)
 
-    print "Succesfully resolved %s with fixVersions=%s!" % (jira_id, fix_versions)
+    print("Succesfully resolved %s with fixVersions=%s!" % (jira_id, fix_versions))
 
 if JIRA_IMPORTED:
     jira_login_accepted = False
     while not jira_login_accepted:
         if JIRA_USERNAME:
-            print "JIRA username: %s" % JIRA_USERNAME
+            print("JIRA username: %s" % JIRA_USERNAME)
         else:
-            JIRA_USERNAME = raw_input("Enter JIRA username: ")
+            JIRA_USERNAME = input("Enter JIRA username: ")
 
         if not JIRA_PASSWORD:
             JIRA_PASSWORD = getpass.getpass("Enter JIRA password: ")
@@ -324,12 +332,12 @@ if JIRA_IMPORTED:
                                         basic_auth=(JIRA_USERNAME, JIRA_PASSWORD))
             jira_login_accepted = True
         except Exception as e:
-            print "\nJIRA login failed, try again\n"
+            print("\nJIRA login failed, try again\n")
             JIRA_USERNAME = None
             JIRA_PASSWORD = None
 else:
-    print "WARNING: Could not find jira python library. Run 'sudo pip install jira' to install."
-    print "The tool will continue to run but won't handle the JIRA."
+    print("WARNING: Could not find jira python library. Run 'sudo pip install jira' to install.")
+    print("The tool will continue to run but won't handle the JIRA.")
     print
 
 branches = get_json("%s/branches" % GITHUB_API_BASE)
@@ -338,7 +346,10 @@ branch_names = filter(lambda x: x.startswith("branch-"), [x['name'] for x in bra
 # Julien: I commented this out as we don't have any "branch-*" branch yet
 #latest_branch = sorted(branch_names, reverse=True)[0]
 
-pr_num = raw_input("Which pull request would you like to merge? (e.g. 34): ")
+if len(sys.argv) > 1:
+  pr_num = int(sys.argv[1])
+else:
+  pr_num = input("Which pull request would you like to merge? (e.g. 34): ")
 pr = get_json("%s/pulls/%s" % (GITHUB_API_BASE, pr_num))
 
 url = pr["url"]
@@ -352,7 +363,7 @@ base_ref = pr["head"]["ref"]
 pr_repo_desc = "%s/%s" % (user_login, base_ref)
 
 if pr["merged"] is True:
-    print "Pull request %s has already been merged, assuming you want to backport" % pr_num
+    print("Pull request %s has already been merged, assuming you want to backport" % pr_num)
     merge_commit_desc = run_cmd([
         'git', 'log', '--merges', '--first-parent',
         '--grep=pull request #%s' % pr_num, '--oneline']).split("\n")[0]
@@ -362,7 +373,7 @@ if pr["merged"] is True:
     merge_hash = merge_commit_desc[:7]
     message = merge_commit_desc[8:]
 
-    print "Found: %s" % message
+    print("Found: %s" % message)
     maybe_cherry_pick(pr_num, merge_hash, latest_branch)
     sys.exit(0)
 
@@ -381,7 +392,7 @@ merged_refs = [target_ref]
 merge_hash = merge_pr(pr_num, target_ref)
 
 pick_prompt = "Would you like to pick %s into another branch?" % merge_hash
-while raw_input("\n%s (y/n): " % pick_prompt).lower() == "y":
+while input("\n%s (y/n): " % pick_prompt).lower() == "y":
     merged_refs = merged_refs + [cherry_pick(pr_num, merge_hash, latest_branch)]
 
 if JIRA_IMPORTED:
@@ -389,5 +400,5 @@ if JIRA_IMPORTED:
     jira_comment = "Issue resolved by pull request %s\n[%s/%s]" % (pr_num, GITHUB_BASE, pr_num)
     resolve_jira(title, merged_refs, jira_comment)
 else:
-    print "WARNING: Could not find jira python library. Run 'sudo pip install jira' to install."
-    print "Exiting without trying to close the associated JIRA."
+    print("WARNING: Could not find jira python library. Run 'sudo pip install jira' to install.")
+    print("Exiting without trying to close the associated JIRA.")
