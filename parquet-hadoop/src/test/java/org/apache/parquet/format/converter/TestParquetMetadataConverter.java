@@ -230,6 +230,32 @@ public class TestParquetMetadataConverter {
   }
 
   @Test
+  public void testParquetMetadataConverterWithDictionaryWithoutStats() throws IOException {
+    ParquetMetadata parquetMetaData = createParquetMetaData(Encoding.PLAIN_DICTIONARY, Encoding.PLAIN, false);
+
+    ParquetMetadataConverter converter = new ParquetMetadataConverter();
+    FileMetaData fmd1 = converter.toParquetMetadata(1, parquetMetaData);
+
+    // Flag should be true
+    fmd1.row_groups.forEach(rowGroup -> rowGroup.columns.forEach(column -> {
+      assertTrue(column.meta_data.isSetDictionary_page_offset());
+    }));
+
+    ByteArrayOutputStream metaDataOutputStream = new ByteArrayOutputStream();
+    Util.writeFileMetaData(fmd1, metaDataOutputStream);
+    ByteArrayInputStream metaDataInputStream = new ByteArrayInputStream(metaDataOutputStream.toByteArray());
+    FileMetaData fmd2 = Util.readFileMetaData(metaDataInputStream);
+    ParquetMetadata parquetMetaDataConverted = converter.fromParquetMetadata(fmd2);
+
+    long dicOffsetOriginal =
+        parquetMetaData.getBlocks().get(0).getColumns().get(0).getDictionaryPageOffset();
+    long dicOffsetConverted =
+        parquetMetaDataConverted.getBlocks().get(0).getColumns().get(0).getDictionaryPageOffset();
+
+    Assert.assertEquals(dicOffsetOriginal, dicOffsetConverted);
+  }
+
+  @Test
   public void testParquetMetadataConverterWithoutDictionary() throws IOException {
     ParquetMetadata parquetMetaData = createParquetMetaData(null, Encoding.PLAIN);
 
@@ -1283,17 +1309,25 @@ public class TestParquetMetadataConverter {
   }
 
   private static ParquetMetadata createParquetMetaData(Encoding dicEncoding, Encoding dataEncoding) {
+    return createParquetMetaData(dicEncoding, dataEncoding, true);
+  }
+
+  private static ParquetMetadata createParquetMetaData(
+      Encoding dicEncoding, Encoding dataEncoding, boolean includeDicStats) {
     MessageType schema = parseMessageType("message schema { optional int32 col (INT_32); }");
     org.apache.parquet.hadoop.metadata.FileMetaData fileMetaData =
         new org.apache.parquet.hadoop.metadata.FileMetaData(schema, new HashMap<String, String>(), null);
     List<BlockMetaData> blockMetaDataList = new ArrayList<BlockMetaData>();
     BlockMetaData blockMetaData = new BlockMetaData();
-    EncodingStats.Builder builder = new EncodingStats.Builder();
-    if (dicEncoding != null) {
-      builder.addDictEncoding(dicEncoding).build();
+    EncodingStats es = null;
+    if (includeDicStats) {
+      EncodingStats.Builder builder = new EncodingStats.Builder();
+      if (dicEncoding != null) {
+        builder.addDictEncoding(dicEncoding).build();
+      }
+      builder.addDataEncoding(dataEncoding);
+      es = builder.build();
     }
-    builder.addDataEncoding(dataEncoding);
-    EncodingStats es = builder.build();
     Set<org.apache.parquet.column.Encoding> e = new HashSet<org.apache.parquet.column.Encoding>();
     PrimitiveTypeName t = PrimitiveTypeName.INT32;
     ColumnPath p = ColumnPath.get("col");

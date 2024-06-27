@@ -556,8 +556,7 @@ public class ParquetMetadataConverter {
           columnMetaData.getTotalUncompressedSize(),
           columnMetaData.getTotalSize(),
           columnMetaData.getFirstDataPageOffset());
-      if (columnMetaData.getEncodingStats() != null
-          && columnMetaData.getEncodingStats().hasDictionaryPages()) {
+      if (columnMetaData.hasDictionaryPage()) {
         metaData.setDictionary_page_offset(columnMetaData.getDictionaryPageOffset());
       }
       long bloomFilterOffset = columnMetaData.getBloomFilterOffset();
