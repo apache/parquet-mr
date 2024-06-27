@@ -68,6 +68,16 @@ public class CheckParquet251Command extends BaseCommand {
   @Parameter(description = "<files>", required = true)
   List<String> files;
 
+  @Parameter(
+      names = {"-f", "--force"},
+      description = "Force to check the parquet file.")
+  boolean force;
+
+  @Parameter(
+      names = {"-a", "--all"},
+      description = "Check all columns in the parquet file.")
+  boolean checkAllColumns;
+
   @Override
   public int run() throws IOException {
     boolean badFiles = false;
@@ -90,7 +100,7 @@ public class CheckParquet251Command extends BaseCommand {
 
     FileMetaData meta = footer.getFileMetaData();
     String createdBy = meta.getCreatedBy();
-    if (CorruptStatistics.shouldIgnoreStatistics(createdBy, BINARY)) {
+    if (force || CorruptStatistics.shouldIgnoreStatistics(createdBy, BINARY)) {
       // create fake metadata that will read corrupt stats and return them
       FileMetaData fakeMeta =
           new FileMetaData(meta.getSchema(), meta.getKeyValueMetaData(), Version.FULL_VERSION);
@@ -101,17 +111,17 @@ public class CheckParquet251Command extends BaseCommand {
           columns, Iterables.filter(meta.getSchema().getColumns(), new Predicate<ColumnDescriptor>() {
             @Override
             public boolean apply(@Nullable ColumnDescriptor input) {
-              return input != null && input.getType() == BINARY;
+              return checkAllColumns || (input != null && input.getType() == BINARY);
             }
           }));
 
       // now check to see if the data is actually corrupt
       try (ParquetFileReader reader =
-          new ParquetFileReader(getConf(), fakeMeta, path, footer.getBlocks(), columns)) {
+               new ParquetFileReader(getConf(), fakeMeta, path, footer.getBlocks(), columns)) {
         PageStatsValidator validator = new PageStatsValidator();
         for (PageReadStore pages = reader.readNextRowGroup();
-            pages != null;
-            pages = reader.readNextRowGroup()) {
+             pages != null;
+             pages = reader.readNextRowGroup()) {
           validator.validate(columns, pages);
           pages.close();
         }
@@ -125,7 +135,10 @@ public class CheckParquet251Command extends BaseCommand {
 
   @Override
   public List<String> getExamples() {
-    return Arrays.asList("# Check file1.parquet for corrupt page and column stats", "file1.parquet");
+    return Arrays.asList(
+        "# Check file1.parquet for corrupt page and column stats", "file1.parquet",
+        "# Force to check all columns in file1.parquet for corrupt page and column stats", "file1.parquet -f -a"
+    );
   }
 
   public static class BadStatsException extends RuntimeException {
@@ -287,7 +300,7 @@ public class CheckParquet251Command extends BaseCommand {
   }
 
   private static final DynConstructors.Ctor<ColumnReader> COL_READER_CTOR = new DynConstructors.Builder(
-          ColumnReader.class)
+      ColumnReader.class)
       .hiddenImpl(
           "org.apache.parquet.column.impl.ColumnReaderImpl",
           ColumnDescriptor.class,
@@ -336,7 +349,7 @@ public class CheckParquet251Command extends BaseCommand {
         column.consume();
       }
 
-      if (numNulls != stats.getNumNulls()) {
+      if (stats.isNumNullsSet() && numNulls != stats.getNumNulls()) {
         throw new BadStatsException("Number of nulls doesn't match.");
       }
 
