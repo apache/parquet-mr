@@ -75,7 +75,7 @@
     <spotless.version>2.30.0</spotless.version>
     <shade.prefix>shaded.parquet</shade.prefix>
     <hadoop.version>3.3.6</hadoop.version>
-    <parquet.format.version>2.10.0</parquet.format.version>
+    <parquet.format.version>2.11.0-SNAPSHOT</parquet.format.version>
     <previous.version>1.13.1</previous.version>
     <thrift.executable>thrift</thrift.executable>
     <format.thrift.executable>${thrift.executable}</format.thrift.executable>
@@ -98,6 +98,7 @@
     <powermock.version>2.0.9</powermock.version>
     <net.openhft.version>0.16</net.openhft.version>
     <exec-maven-plugin.version>1.6.0</exec-maven-plugin.version>
+    <jts.version>1.19.0</jts.version>
 
     <!-- parquet-cli dependencies -->
     <opencsv.version>2.3</opencsv.version>
