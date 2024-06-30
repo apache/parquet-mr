@@ -33,7 +33,7 @@
     <elephant-bird.version>4.4</elephant-bird.version>
     <protobuf.version>3.25.3</protobuf.version>
     <common-protos.version>2.39.0</common-protos.version>  <!-- make sure it's compatible with protobuf.version -->
-    <truth-proto-extension.version>1.4.2</truth-proto-extension.version>
+    <truth-proto-extension.version>1.4.3</truth-proto-extension.version>
   </properties>
 
 
