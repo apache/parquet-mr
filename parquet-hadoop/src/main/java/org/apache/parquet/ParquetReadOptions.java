@@ -23,6 +23,8 @@ import static org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FI
 import static org.apache.parquet.hadoop.ParquetInputFormat.BLOOM_FILTERING_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.COLUMN_INDEX_FILTERING_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.DICTIONARY_FILTERING_ENABLED;
+import static org.apache.parquet.hadoop.ParquetInputFormat.ENABLE_ASYNC_IO_READER;
+import static org.apache.parquet.hadoop.ParquetInputFormat.ENABLE_PARALLEL_COLUMN_READER;
 import static org.apache.parquet.hadoop.ParquetInputFormat.HADOOP_VECTORED_IO_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.OFF_HEAP_DECRYPT_BUFFER_ENABLED;
 import static org.apache.parquet.hadoop.ParquetInputFormat.PAGE_VERIFY_CHECKSUM_ENABLED;
@@ -36,6 +38,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.HeapByteBufferAllocator;
 import org.apache.parquet.compression.CompressionCodecFactory;
@@ -61,6 +64,8 @@ public class ParquetReadOptions {
   private static final boolean PAGE_VERIFY_CHECKSUM_ENABLED_DEFAULT = false;
   private static final boolean BLOOM_FILTER_ENABLED_DEFAULT = true;
   private static final boolean USE_OFF_HEAP_DECRYPT_BUFFER_DEFAULT = false;
+  private static final boolean ENABLE_ASYNC_IO_READER_DEFAULT = false;
+  private static final boolean ENABLE_PARALLEL_COLUMN_READER_DEFAULT = false;
 
   private final boolean useSignedStringMinMax;
   private final boolean useStatsFilter;
@@ -71,10 +76,16 @@ public class ParquetReadOptions {
   private final boolean useBloomFilter;
   private final boolean useOffHeapDecryptBuffer;
   private final boolean useHadoopVectoredIo;
+  private final boolean enableAsyncIOReader;
+  private final boolean enableParallelColumnReader;
   private final FilterCompat.Filter recordFilter;
   private final ParquetMetadataConverter.MetadataFilter metadataFilter;
   private final CompressionCodecFactory codecFactory;
   private final ByteBufferAllocator allocator;
+  // Thread pool to read column chunk data from storage.
+  private final ExecutorService ioThreadPool;
+  // Thread pool to process pages for multiple columns in parallel.
+  private final ExecutorService processThreadPool;
   private final int maxAllocationSize;
   private final Map<String, String> properties;
   private final FileDecryptionProperties fileDecryptionProperties;
@@ -91,6 +102,8 @@ public class ParquetReadOptions {
       boolean useBloomFilter,
       boolean useOffHeapDecryptBuffer,
       boolean useHadoopVectoredIo,
+      boolean enableAsyncIOReader,
+      boolean enableParallelColumnReader,
       FilterCompat.Filter recordFilter,
       ParquetMetadataConverter.MetadataFilter metadataFilter,
       CompressionCodecFactory codecFactory,
@@ -98,6 +111,8 @@ public class ParquetReadOptions {
       int maxAllocationSize,
       Map<String, String> properties,
       FileDecryptionProperties fileDecryptionProperties,
+      ExecutorService ioThreadPool,
+      ExecutorService processThreadPool,
       ParquetMetricsCallback metricsCallback) {
     this(
         useSignedStringMinMax,
@@ -109,6 +124,8 @@ public class ParquetReadOptions {
         useBloomFilter,
         useOffHeapDecryptBuffer,
         useHadoopVectoredIo,
+        enableAsyncIOReader,
+        enableParallelColumnReader,
         recordFilter,
         metadataFilter,
         codecFactory,
@@ -116,6 +133,8 @@ public class ParquetReadOptions {
         maxAllocationSize,
         properties,
         fileDecryptionProperties,
+        ioThreadPool,
+        processThreadPool,
         metricsCallback,
         new HadoopParquetConfiguration());
   }
@@ -130,6 +149,8 @@ public class ParquetReadOptions {
       boolean useBloomFilter,
       boolean useOffHeapDecryptBuffer,
       boolean useHadoopVectoredIo,
+      boolean enableAsyncIOReader,
+      boolean enableParallelColumnReader,
       FilterCompat.Filter recordFilter,
       ParquetMetadataConverter.MetadataFilter metadataFilter,
       CompressionCodecFactory codecFactory,
@@ -137,6 +158,8 @@ public class ParquetReadOptions {
       int maxAllocationSize,
       Map<String, String> properties,
       FileDecryptionProperties fileDecryptionProperties,
+      ExecutorService ioThreadPool,
+      ExecutorService processThreadPool,
       ParquetMetricsCallback metricsCallback,
       ParquetConfiguration conf) {
     this.useSignedStringMinMax = useSignedStringMinMax;
@@ -148,6 +171,8 @@ public class ParquetReadOptions {
     this.useBloomFilter = useBloomFilter;
     this.useOffHeapDecryptBuffer = useOffHeapDecryptBuffer;
     this.useHadoopVectoredIo = useHadoopVectoredIo;
+    this.enableAsyncIOReader = enableAsyncIOReader;
+    this.enableParallelColumnReader = enableParallelColumnReader;
     this.recordFilter = recordFilter;
     this.metadataFilter = metadataFilter;
     this.codecFactory = codecFactory;
@@ -155,6 +180,8 @@ public class ParquetReadOptions {
     this.maxAllocationSize = maxAllocationSize;
     this.properties = Collections.unmodifiableMap(properties);
     this.fileDecryptionProperties = fileDecryptionProperties;
+    this.ioThreadPool = ioThreadPool;
+    this.processThreadPool = processThreadPool;
     this.metricsCallback = metricsCallback;
     this.conf = conf;
   }
@@ -185,6 +212,14 @@ public class ParquetReadOptions {
 
   public boolean useOffHeapDecryptBuffer() {
     return useOffHeapDecryptBuffer;
+  }
+
+  public boolean isAsyncIOReaderEnabled() {
+    return enableAsyncIOReader;
+  }
+
+  public boolean isParallelColumnReaderEnabled() {
+    return enableParallelColumnReader;
   }
 
   public boolean usePageChecksumVerification() {
@@ -227,6 +262,14 @@ public class ParquetReadOptions {
     return fileDecryptionProperties;
   }
 
+  public ExecutorService getIOThreadPool() {
+    return ioThreadPool;
+  }
+
+  public ExecutorService getProcessThreadPool() {
+    return processThreadPool;
+  }
+
   public ParquetMetricsCallback getMetricsCallback() {
     return metricsCallback;
   }
@@ -258,6 +301,8 @@ public class ParquetReadOptions {
     protected boolean usePageChecksumVerification = PAGE_VERIFY_CHECKSUM_ENABLED_DEFAULT;
     protected boolean useBloomFilter = BLOOM_FILTER_ENABLED_DEFAULT;
     protected boolean useOffHeapDecryptBuffer = USE_OFF_HEAP_DECRYPT_BUFFER_DEFAULT;
+    protected boolean enableAsyncIOReader = ENABLE_ASYNC_IO_READER_DEFAULT;
+    protected boolean enableParallelColumnReader = ENABLE_PARALLEL_COLUMN_READER_DEFAULT;
     protected FilterCompat.Filter recordFilter = null;
     protected ParquetMetadataConverter.MetadataFilter metadataFilter = NO_FILTER;
     // the page size parameter isn't used when only using the codec factory to get decompressors
@@ -266,6 +311,8 @@ public class ParquetReadOptions {
     protected int maxAllocationSize = ALLOCATION_SIZE_DEFAULT;
     protected Map<String, String> properties = new HashMap<>();
     protected FileDecryptionProperties fileDecryptionProperties = null;
+    protected ExecutorService ioThreadPool = null;
+    protected ExecutorService processThreadPool = null;
     protected ParquetConfiguration conf;
     protected ParquetMetricsCallback metricsCallback;
 
@@ -283,6 +330,9 @@ public class ParquetReadOptions {
       usePageChecksumVerification(conf.getBoolean(PAGE_VERIFY_CHECKSUM_ENABLED, usePageChecksumVerification));
       useBloomFilter(conf.getBoolean(BLOOM_FILTERING_ENABLED, true));
       useOffHeapDecryptBuffer(conf.getBoolean(OFF_HEAP_DECRYPT_BUFFER_ENABLED, false));
+      enableAsyncIOReader(conf.getBoolean(ENABLE_ASYNC_IO_READER, ENABLE_ASYNC_IO_READER_DEFAULT));
+      enableParallelColumnReader(
+          conf.getBoolean(ENABLE_PARALLEL_COLUMN_READER, ENABLE_PARALLEL_COLUMN_READER_DEFAULT));
       withCodecFactory(HadoopCodecs.newFactory(conf, 0));
       withRecordFilter(getFilter(conf));
       withMaxAllocationInBytes(conf.getInt(ALLOCATION_SIZE, 8388608));
@@ -375,6 +425,16 @@ public class ParquetReadOptions {
       return this;
     }
 
+    public Builder enableAsyncIOReader(boolean enableAsyncIOReader) {
+      this.enableAsyncIOReader = enableAsyncIOReader;
+      return this;
+    }
+
+    public Builder enableParallelColumnReader(boolean enableParallelColumnReader) {
+      this.enableParallelColumnReader = enableParallelColumnReader;
+      return this;
+    }
+
     public Builder withRecordFilter(FilterCompat.Filter rowGroupFilter) {
       this.recordFilter = rowGroupFilter;
       return this;
@@ -420,8 +480,13 @@ public class ParquetReadOptions {
       return this;
     }
 
-    public Builder withMetricsCallback(ParquetMetricsCallback metricsCallback) {
-      this.metricsCallback = metricsCallback;
+    public Builder withIOThreadPool(ExecutorService ioThreadPool) {
+      this.ioThreadPool = ioThreadPool;
+      return this;
+    }
+
+    public Builder withProcessThreadPool(ExecutorService processThreadPool) {
+      this.processThreadPool = processThreadPool;
       return this;
     }
 
@@ -438,12 +503,14 @@ public class ParquetReadOptions {
       withRecordFilter(options.recordFilter);
       withUseHadoopVectoredIo(options.useHadoopVectoredIo);
       withMetadataFilter(options.metadataFilter);
+      enableAsyncIOReader(options.enableAsyncIOReader);
+      enableParallelColumnReader(options.enableParallelColumnReader);
       withCodecFactory(options.codecFactory);
       withAllocator(options.allocator);
       withPageChecksumVerification(options.usePageChecksumVerification);
       withDecryption(options.fileDecryptionProperties);
-      withMetricsCallback(options.metricsCallback);
-      conf = options.conf;
+      withIOThreadPool(options.ioThreadPool);
+      withProcessThreadPool(options.processThreadPool);
       for (Map.Entry<String, String> keyValue : options.properties.entrySet()) {
         set(keyValue.getKey(), keyValue.getValue());
       }
@@ -469,6 +536,8 @@ public class ParquetReadOptions {
           useBloomFilter,
           useOffHeapDecryptBuffer,
           useHadoopVectoredIo,
+          enableAsyncIOReader,
+          enableParallelColumnReader,
           recordFilter,
           metadataFilter,
           codecFactory,
@@ -476,6 +545,8 @@ public class ParquetReadOptions {
           maxAllocationSize,
           properties,
           fileDecryptionProperties,
+          ioThreadPool,
+          processThreadPool,
           metricsCallback,
           conf);
     }

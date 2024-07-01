@@ -52,6 +52,7 @@ import org.apache.parquet.crypto.keytools.mocks.InMemoryKMS;
 import org.apache.parquet.crypto.keytools.mocks.LocalWrapInMemoryKMS;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
+import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.ExampleParquetWriter;
@@ -444,7 +445,28 @@ public class TestPropertiesDrivenEncryption {
       // Write using various encryption configurations.
       testWriteEncryptedParquetFiles(rootPath, DATA, threadPool);
       // Read using various decryption configurations.
-      testReadEncryptedParquetFiles(rootPath, DATA, threadPool);
+      testReadEncryptedParquetFiles(rootPath, DATA, threadPool, false);
+    } finally {
+      threadPool.shutdown();
+    }
+  }
+
+  @Test
+  public void testWriteReadEncryptedParquetFilesAsync() throws IOException {
+    Path rootPath = new Path(temporaryFolder.getRoot().getPath());
+    LOG.info("======== testWriteReadEncryptedParquetFiles {} ========", rootPath.toString());
+    LOG.info(
+        "Run: isKeyMaterialInternalStorage={} isDoubleWrapping={} isWrapLocally={}",
+        isKeyMaterialInternalStorage,
+        isDoubleWrapping,
+        isWrapLocally);
+    KeyToolkit.removeCacheEntriesForAllTokens();
+    ExecutorService threadPool = Executors.newFixedThreadPool(NUM_THREADS);
+    try {
+      // Write using various encryption configurations.
+      testWriteEncryptedParquetFiles(rootPath, DATA, threadPool);
+      // Read using various decryption configurations.
+      testReadEncryptedParquetFiles(rootPath, DATA, threadPool, true);
     } finally {
       threadPool.shutdown();
     }
@@ -537,9 +559,9 @@ public class TestPropertiesDrivenEncryption {
     return new Path(root, encryptionConfiguration.toString() + "_" + threadNumber + suffix);
   }
 
-  private void testReadEncryptedParquetFiles(Path root, List<SingleRow> data, ExecutorService threadPool)
-      throws IOException {
-    readFilesMultithreaded(root, data, threadPool, false /*keysRotated*/);
+  private void testReadEncryptedParquetFiles(
+      Path root, List<SingleRow> data, ExecutorService threadPool, boolean useAsyncIO) throws IOException {
+    readFilesMultithreaded(root, data, threadPool, false /*keysRotated*/, useAsyncIO);
 
     if (isWrapLocally) {
       return; // key rotation is not supported with local key wrapping
@@ -577,11 +599,11 @@ public class TestPropertiesDrivenEncryption {
     LOG.info("--> Finish master key rotation");
 
     LOG.info("--> Read files again with new keys");
-    readFilesMultithreaded(root, data, threadPool, true /*keysRotated*/);
+    readFilesMultithreaded(root, data, threadPool, true /*keysRotated*/, useAsyncIO);
   }
 
   private void readFilesMultithreaded(
-      Path root, List<SingleRow> data, ExecutorService threadPool, boolean keysRotated) {
+      Path root, List<SingleRow> data, ExecutorService threadPool, boolean keysRotated, boolean useAsyncIO) {
     DecryptionConfiguration[] decryptionConfigurations = DecryptionConfiguration.values();
     for (DecryptionConfiguration decryptionConfiguration : decryptionConfigurations) {
       LOG.info("\n\n");
@@ -608,7 +630,8 @@ public class TestPropertiesDrivenEncryption {
                 decryptionConfiguration,
                 data,
                 file,
-                keysRotated);
+                keysRotated,
+                useAsyncIO);
 
             latch.countDown();
           });
@@ -628,7 +651,8 @@ public class TestPropertiesDrivenEncryption {
       DecryptionConfiguration decryptionConfiguration,
       List<SingleRow> data,
       Path file,
-      boolean keysRotated) {
+      boolean keysRotated,
+      boolean useAsyncIO) {
     FileDecryptionProperties fileDecryptionProperties = null;
     if (null == hadoopConfig) {
       hadoopConfig = new Configuration();
@@ -674,6 +698,13 @@ public class TestPropertiesDrivenEncryption {
       hadoopConfig.set(InMemoryKMS.KEY_LIST_PROPERTY_NAME, NEW_KEY_LIST);
     }
 
+    if (useAsyncIO) {
+      hadoopConfig.set(ParquetInputFormat.ENABLE_ASYNC_IO_READER, "true");
+      hadoopConfig.set(ParquetInputFormat.ENABLE_PARALLEL_COLUMN_READER, "true");
+    }
+    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
+    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(NUM_THREADS);
+
     int rowNum = 0;
     try (TrackingByteBufferAllocator allocator = TrackingByteBufferAllocator.wrap(
             this.isDecryptionDirectMemory
@@ -683,6 +714,8 @@ public class TestPropertiesDrivenEncryption {
             .withConf(hadoopConfig)
             .withAllocator(allocator)
             .withDecryption(fileDecryptionProperties)
+            .withIOThreadPool(parquetIOThreadPool)
+            .withProcessThreadPool(parquetProcessThreadPool)
             .build()) {
       for (Group group = reader.read(); group != null; group = reader.read()) {
         SingleRow rowExpected = data.get(rowNum++);
@@ -725,6 +758,9 @@ public class TestPropertiesDrivenEncryption {
       }
     } catch (Exception e) {
       checkResult(file.getName(), decryptionConfiguration, e);
+    } finally {
+      parquetProcessThreadPool.shutdown();
+      parquetIOThreadPool.shutdown();
     }
     hadoopConfig.unset("parquet.read.schema");
   }

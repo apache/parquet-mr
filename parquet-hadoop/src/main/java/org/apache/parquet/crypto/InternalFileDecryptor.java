@@ -60,10 +60,7 @@ public class InternalFileDecryptor {
 
   private BlockCipher.Decryptor getThriftModuleDecryptor(byte[] columnKey) {
     if (null == columnKey) { // Decryptor with footer key
-      if (null == aesGcmDecryptorWithFooterKey) {
-        aesGcmDecryptorWithFooterKey = ModuleCipherFactory.getDecryptor(AesMode.GCM, footerKey);
-      }
-      return aesGcmDecryptorWithFooterKey;
+      return ModuleCipherFactory.getDecryptor(AesMode.GCM, footerKey);
     } else { // Decryptor with column key
       return ModuleCipherFactory.getDecryptor(AesMode.GCM, columnKey);
     }

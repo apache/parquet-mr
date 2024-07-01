@@ -20,6 +20,7 @@
 package org.apache.parquet;
 
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.bytes.ByteBufferAllocator;
@@ -44,6 +45,8 @@ public class HadoopReadOptions extends ParquetReadOptions {
       boolean useBloomFilter,
       boolean useOffHeapDecryptBuffer,
       boolean useHadoopVectoredIo,
+      boolean enableAsyncIOReader,
+      boolean enableParallelColumnReader,
       FilterCompat.Filter recordFilter,
       MetadataFilter metadataFilter,
       CompressionCodecFactory codecFactory,
@@ -52,6 +55,8 @@ public class HadoopReadOptions extends ParquetReadOptions {
       Map<String, String> properties,
       Configuration conf,
       FileDecryptionProperties fileDecryptionProperties,
+      ExecutorService ioThreadPool,
+      ExecutorService processThreadPool,
       ParquetMetricsCallback metricsCallback) {
     super(
         useSignedStringMinMax,
@@ -63,6 +68,8 @@ public class HadoopReadOptions extends ParquetReadOptions {
         useBloomFilter,
         useOffHeapDecryptBuffer,
         useHadoopVectoredIo,
+        enableAsyncIOReader,
+        enableParallelColumnReader,
         recordFilter,
         metadataFilter,
         codecFactory,
@@ -70,6 +77,8 @@ public class HadoopReadOptions extends ParquetReadOptions {
         maxAllocationSize,
         properties,
         fileDecryptionProperties,
+        ioThreadPool,
+        processThreadPool,
         metricsCallback,
         new HadoopParquetConfiguration(conf));
     this.conf = conf;
@@ -126,6 +135,8 @@ public class HadoopReadOptions extends ParquetReadOptions {
           useBloomFilter,
           useOffHeapDecryptBuffer,
           useHadoopVectoredIo,
+          enableAsyncIOReader,
+          enableParallelColumnReader,
           recordFilter,
           metadataFilter,
           codecFactory,
@@ -134,6 +145,8 @@ public class HadoopReadOptions extends ParquetReadOptions {
           properties,
           conf,
           fileDecryptionProperties,
+          ioThreadPool,
+          processThreadPool,
           metricsCallback);
     }
   }

@@ -19,14 +19,13 @@
 package org.apache.parquet.hadoop;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PrimitiveIterator;
-import java.util.Queue;
+import java.util.concurrent.LinkedBlockingDeque;
 import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.ByteBufferReleaser;
@@ -54,7 +53,7 @@ import org.slf4j.LoggerFactory;
  * The name is kind of confusing since it references three different "entities"
  * in our format: columns, chunks, and pages
  */
-class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore {
+public class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore {
   private static final Logger LOG = LoggerFactory.getLogger(ColumnChunkPageReadStore.class);
 
   /**
@@ -64,11 +63,13 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
    * This implementation is provided with a list of pages, each of which
    * is decompressed and passed through.
    */
-  static final class ColumnChunkPageReader implements PageReader {
+  public static final class ColumnChunkPageReader implements PageReader {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ColumnChunkPageReader.class);
 
     private final BytesInputDecompressor decompressor;
     private final long valueCount;
-    private final Queue<DataPage> compressedPages;
+    private final LinkedBlockingDeque<Optional<DataPage>> compressedPages;
     private final DictionaryPage compressedDictionaryPage;
     // null means no page synchronization is required; firstRowIndex will not be returned by the pages
     private final OffsetIndex offsetIndex;
@@ -80,31 +81,33 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
     private final byte[] dataPageAAD;
     private final byte[] dictionaryPageAAD;
     private final ByteBufferReleaser releaser;
+    private final FilePageReader filePageReader;
 
     ColumnChunkPageReader(
         BytesInputDecompressor decompressor,
-        List<DataPage> compressedPages,
+        LinkedBlockingDeque<Optional<DataPage>> compressedPages,
         DictionaryPage compressedDictionaryPage,
         OffsetIndex offsetIndex,
+        long valueCount,
         long rowCount,
         BlockCipher.Decryptor blockDecryptor,
         byte[] fileAAD,
         int rowGroupOrdinal,
         int columnOrdinal,
+        FilePageReader filePageReader,
         ParquetReadOptions options) {
       this.decompressor = decompressor;
-      this.compressedPages = new ArrayDeque<DataPage>(compressedPages);
+      this.compressedPages = compressedPages;
       this.compressedDictionaryPage = compressedDictionaryPage;
-      long count = 0;
-      for (DataPage p : compressedPages) {
-        count += p.getValueCount();
-      }
-      this.valueCount = count;
+      this.valueCount = valueCount;
       this.offsetIndex = offsetIndex;
       this.rowCount = rowCount;
       this.options = options;
       this.releaser = new ByteBufferReleaser(options.getAllocator());
       this.blockDecryptor = blockDecryptor;
+
+      this.filePageReader = filePageReader;
+
       if (null != blockDecryptor) {
         dataPageAAD =
             AesCipher.createModuleAAD(fileAAD, ModuleType.DataPage, rowGroupOrdinal, columnOrdinal, 0);
@@ -114,6 +117,11 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
         dataPageAAD = null;
         dictionaryPageAAD = null;
       }
+    }
+
+    @Override
+    public void close() throws IOException {
+      this.filePageReader.close();
     }
 
     private int getPageOrdinal(int currentPageIndex) {
@@ -131,7 +139,12 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
 
     @Override
     public DataPage readPage() {
-      final DataPage compressedPage = compressedPages.poll();
+      final DataPage compressedPage;
+      try {
+        compressedPage = compressedPages.take().orElse(null);
+      } catch (InterruptedException e) {
+        throw new RuntimeException("Error reading parquet page data.", e);
+      }
       if (compressedPage == null) {
         return null;
       }
@@ -412,6 +425,11 @@ class ColumnChunkPageReadStore implements PageReadStore, DictionaryPageReadStore
   public void close() {
     for (ColumnChunkPageReader reader : readers.values()) {
       reader.releaseBuffers();
+      try {
+        reader.close();
+      } catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
     }
     releaser.close();
   }

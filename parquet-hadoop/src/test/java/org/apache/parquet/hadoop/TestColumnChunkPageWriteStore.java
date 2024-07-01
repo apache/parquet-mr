@@ -20,7 +20,6 @@ package org.apache.parquet.hadoop;
 
 import static org.apache.parquet.column.Encoding.PLAIN;
 import static org.apache.parquet.column.Encoding.RLE;
-import static org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.GZIP;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.UNCOMPRESSED;
 import static org.apache.parquet.schema.OriginalType.UTF8;
@@ -42,9 +41,13 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.HadoopReadOptions;
+import org.apache.parquet.ParquetReadOptions;
 import org.apache.parquet.bytes.ByteBufferAllocator;
 import org.apache.parquet.bytes.BytesInput;
 import org.apache.parquet.bytes.DirectByteBufferAllocator;
@@ -66,6 +69,7 @@ import org.apache.parquet.hadoop.ParquetFileWriter.Mode;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.hadoop.util.HadoopInputFile;
 import org.apache.parquet.hadoop.util.HadoopOutputFile;
 import org.apache.parquet.internal.column.columnindex.ColumnIndex;
 import org.apache.parquet.internal.column.columnindex.ColumnIndexBuilder;
@@ -128,10 +132,12 @@ public class TestColumnChunkPageWriteStore {
   private int initialSize = 1024;
   private Configuration conf;
   private TrackingByteBufferAllocator allocator;
+  private ParquetReadOptions readOptions;
 
   @Before
   public void initConfiguration() {
     this.conf = new Configuration();
+    this.readOptions = HadoopReadOptions.builder(conf).build();
   }
 
   @After
@@ -141,7 +147,7 @@ public class TestColumnChunkPageWriteStore {
 
   @Test
   public void test() throws Exception {
-    test(conf, allocator = TrackingByteBufferAllocator.wrap(new HeapByteBufferAllocator()));
+    testInternal(conf, readOptions, allocator = TrackingByteBufferAllocator.wrap(new HeapByteBufferAllocator()));
   }
 
   @Test
@@ -150,10 +156,46 @@ public class TestColumnChunkPageWriteStore {
     // we want to test the path with direct buffers so we need to enable this config as well
     // even though this file is not encrypted
     config.set(ParquetInputFormat.OFF_HEAP_DECRYPT_BUFFER_ENABLED, "true");
-    test(config, allocator = TrackingByteBufferAllocator.wrap(new DirectByteBufferAllocator()));
+    testInternal(
+        config, readOptions, allocator = TrackingByteBufferAllocator.wrap(new DirectByteBufferAllocator()));
   }
 
-  public void test(Configuration config, ByteBufferAllocator allocator) throws Exception {
+  @Test
+  public void testAsync() throws Exception {
+    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(4);
+    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(4);
+    ParquetReadOptions readOptions;
+    try {
+      conf.setBoolean("parquet.read.async.io.enabled", true);
+      conf.setBoolean("parquet.read.parallel.columnreader.enabled", false);
+      readOptions = HadoopReadOptions.builder(conf)
+          .withIOThreadPool(parquetIOThreadPool)
+          .build();
+      testInternal(
+          conf, readOptions, allocator = TrackingByteBufferAllocator.wrap(new HeapByteBufferAllocator()));
+      conf.setBoolean("parquet.read.async.io.enabled", false);
+      conf.setBoolean("parquet.read.parallel.columnreader.enabled", true);
+      readOptions = HadoopReadOptions.builder(conf)
+          .withProcessThreadPool(parquetProcessThreadPool)
+          .build();
+      testInternal(
+          conf, readOptions, allocator = TrackingByteBufferAllocator.wrap(new HeapByteBufferAllocator()));
+      conf.setBoolean("parquet.read.async.io.enabled", true);
+      conf.setBoolean("parquet.read.parallel.columnreader.enabled", true);
+      readOptions = HadoopReadOptions.builder(conf)
+          .withIOThreadPool(parquetIOThreadPool)
+          .withProcessThreadPool(parquetProcessThreadPool)
+          .build();
+      testInternal(
+          conf, readOptions, allocator = TrackingByteBufferAllocator.wrap(new HeapByteBufferAllocator()));
+    } finally {
+      parquetProcessThreadPool.shutdown();
+      parquetIOThreadPool.shutdown();
+    }
+  }
+
+  public void testInternal(Configuration config, ParquetReadOptions readOptions, ByteBufferAllocator allocator)
+      throws Exception {
     Path file = new Path("target/test/TestColumnChunkPageWriteStore/test.parquet");
     Path root = file.getParent();
     FileSystem fs = file.getFileSystem(config);
@@ -214,9 +256,8 @@ public class TestColumnChunkPageWriteStore {
     }
 
     {
-      ParquetMetadata footer = ParquetFileReader.readFooter(conf, file, NO_FILTER);
-      ParquetFileReader reader = new ParquetFileReader(
-          config, footer.getFileMetaData(), file, footer.getBlocks(), schema.getColumns());
+      ParquetFileReader reader = new ParquetFileReader(HadoopInputFile.fromPath(file, conf), readOptions);
+      ParquetMetadata footer = reader.getFooter();
       PageReadStore rowGroup = reader.readNextRowGroup();
       PageReader pageReader = rowGroup.getPageReader(col);
       DataPageV2 page = (DataPageV2) pageReader.readPage();

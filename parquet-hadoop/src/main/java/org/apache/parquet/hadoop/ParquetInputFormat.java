@@ -148,6 +148,14 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
   public static final String OFF_HEAP_DECRYPT_BUFFER_ENABLED = "parquet.decrypt.off-heap.buffer.enabled";
 
   /**
+   * key to configure whether parquet reader should use async file reads.
+   */
+  public static final String ENABLE_ASYNC_IO_READER = "parquet.read.async.io.enabled";
+  /**
+   * key to configure whether parquet reader should read all column data in parallel
+   */
+  public static final String ENABLE_PARALLEL_COLUMN_READER = "parquet.read.parallel.columnreader.enabled";
+  /**
    * key to turn on or off task side metadata loading (default true)
    * if true then metadata is read on the task side and some tasks may finish immediately.
    * if false metadata is read on the client which is slower if there is a lot of metadata but tasks will only be spawn if there is work to do.
@@ -283,7 +291,7 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
    * the read support property in their configuration.
    *
    * @param readSupportClass a ReadSupport subclass
-   * @param <S>              the Java read support type
+   * @param <S> the Java read support type
    */
   public <S extends ReadSupport<T>> ParquetInputFormat(Class<S> readSupportClass) {
     this.readSupportClass = readSupportClass;
@@ -326,7 +334,7 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
 
   /**
    * @param readSupportClass to instantiate
-   * @param <T>              the Java type of objects created by the ReadSupport
+   * @param <T> the Java type of objects created by the ReadSupport
    * @return the configured read support
    */
   @SuppressWarnings("unchecked")
@@ -368,7 +376,7 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
 
   /**
    * @param configuration the configuration to connect to the file system
-   * @param footers       the footers of the files to read
+   * @param footers the footers of the files to read
    * @return the splits for the footers
    * @throws IOException if there is an error while reading
    * @deprecated split planning using file footers will be removed
@@ -502,7 +510,7 @@ public class ParquetInputFormat<T> extends FileInputFormat<Void, T> {
    * the footers for the files
    *
    * @param configuration to connect to the file system
-   * @param statuses      the files to open
+   * @param statuses the files to open
    * @return the footers of the files
    * @throws IOException if there is an error while reading
    */

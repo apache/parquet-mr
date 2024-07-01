@@ -64,6 +64,7 @@ import org.apache.parquet.io.api.Binary;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.Types;
 import org.junit.AfterClass;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -134,6 +135,7 @@ public class TestMultipleWriteRead {
   }
 
   private static Path tmpDir;
+  private Configuration conf;
 
   @BeforeClass
   public static void createTmpDir() {
@@ -143,6 +145,11 @@ public class TestMultipleWriteRead {
   @AfterClass
   public static void deleteTmpDir() throws IOException {
     tmpDir.getFileSystem(new Configuration()).delete(tmpDir, true);
+  }
+
+  @Before
+  public void initConfiguration() {
+    this.conf = new Configuration();
   }
 
   private Path writeFile(Iterable<Group> data) throws IOException {
@@ -158,8 +165,9 @@ public class TestMultipleWriteRead {
   }
 
   private void validateFile(Path file, List<Group> data) throws IOException {
-    try (ParquetReader<Group> reader =
-        ParquetReader.builder(new GroupReadSupport(), file).build()) {
+    try (ParquetReader<Group> reader = ParquetReader.builder(new GroupReadSupport(), file)
+        .withConf(conf)
+        .build()) {
       for (Group group : data) {
         assertEquals(group.toString(), reader.read().toString());
       }
@@ -167,12 +175,21 @@ public class TestMultipleWriteRead {
   }
 
   private void validateFile(Path file, Filter filter, Stream<Group> data) throws IOException {
+    ExecutorService parquetIOThreadPool = Executors.newFixedThreadPool(4);
+    ExecutorService parquetProcessThreadPool = Executors.newFixedThreadPool(4);
+
     try (ParquetReader<Group> reader = ParquetReader.builder(new GroupReadSupport(), file)
+        .withConf(conf)
         .withFilter(filter)
+        .withIOThreadPool(parquetIOThreadPool)
+        .withProcessThreadPool(parquetProcessThreadPool)
         .build()) {
       for (Iterator<Group> it = data.iterator(); it.hasNext(); ) {
         assertEquals(it.next().toString(), reader.read().toString());
       }
+    } finally {
+      parquetProcessThreadPool.shutdown();
+      parquetIOThreadPool.shutdown();
     }
   }
 
@@ -201,8 +218,7 @@ public class TestMultipleWriteRead {
     validateFile(file, filter, data.stream().filter(predicate));
   }
 
-  @Test
-  public void testWriteRead() throws Throwable {
+  public void runReadWriteTest() throws Throwable {
     // 10 random datasets with row counts 10000 to 1000
     List<List<Group>> data = new ArrayList<>();
     for (int i = 0; i < 10; ++i) {
@@ -255,5 +271,23 @@ public class TestMultipleWriteRead {
         throw e.getCause();
       }
     }
+  }
+
+  @Test
+  public void testWriteRead() throws Throwable {
+    runReadWriteTest();
+  }
+
+  @Test
+  public void testWriteReadAsync() throws Throwable {
+    conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
+    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(false));
+    runReadWriteTest();
+    conf.set("parquet.read.async.io.enabled", Boolean.toString(false));
+    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
+    runReadWriteTest();
+    conf.set("parquet.read.async.io.enabled", Boolean.toString(true));
+    conf.set("parquet.read.parallel.columnreader.enabled", Boolean.toString(true));
+    runReadWriteTest();
   }
 }

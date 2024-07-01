@@ -18,10 +18,13 @@
  */
 package org.apache.parquet.column.page;
 
+import java.io.Closeable;
+import java.io.IOException;
+
 /**
  * Reader for a sequence a page from a given column chunk
  */
-public interface PageReader {
+public interface PageReader extends Closeable {
 
   /**
    * @return the dictionary page in that chunk or null if none
@@ -37,4 +40,9 @@ public interface PageReader {
    * @return the next page in that chunk or null if after the last page
    */
   DataPage readPage();
+
+  /**
+   * Close the page reader. By default it is no-op.
+   */
+  default void close() throws IOException {}
 }
