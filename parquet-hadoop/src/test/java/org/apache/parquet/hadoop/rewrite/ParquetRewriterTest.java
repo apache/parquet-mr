@@ -38,13 +38,16 @@ import com.google.common.collect.Maps;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.HadoopReadOptions;
@@ -108,6 +111,7 @@ public class ParquetRewriterTest {
   private final boolean usingHadoop;
 
   private List<EncryptionTestFile> inputFiles = null;
+  private List<List<EncryptionTestFile>> inputFilesToJoinColumns = null;
   private String outputFile = null;
   private ParquetRewriter rewriter = null;
 
@@ -175,6 +179,7 @@ public class ParquetRewriterTest {
   @Before
   public void setUp() {
     outputFile = TestFileBuilder.createTempFile("test");
+    inputFilesToJoinColumns = new ArrayList<>();
   }
 
   @Test
@@ -725,6 +730,119 @@ public class ParquetRewriterTest {
         .build());
   }
 
+  @Test
+  public void testStitchThreeInputsDifferentRowGroupSize() throws Exception {
+    testThreeInputsDifferentRowGroupSize();
+
+    List<Path> inputPathsL =
+        inputFiles.stream().map(x -> new Path(x.getFileName())).collect(Collectors.toList());
+    List<List<Path>> inputPathsR = inputFilesToJoinColumns.stream()
+        .map(x -> x.stream().map(y -> new Path(y.getFileName())).collect(Collectors.toList()))
+        .collect(Collectors.toList());
+    RewriteOptions.Builder builder = createBuilder(inputPathsL, inputPathsR);
+    RewriteOptions options = builder.indexCacheStrategy(indexCacheStrategy).build();
+
+    rewriter = new ParquetRewriter(options);
+    rewriter.processBlocks();
+    rewriter.close();
+    MessageType actualSchema = ParquetFileReader.readFooter(
+            conf, new Path(outputFile), ParquetMetadataConverter.NO_FILTER)
+        .getFileMetaData()
+        .getSchema();
+    MessageType expectSchema = createSchema();
+
+    Map<ColumnPath, List<BloomFilter>> inputBloomFilters = allInputBloomFilters(null);
+    Map<ColumnPath, List<BloomFilter>> outputBloomFilters = allOutputBloomFilters(null);
+    Set<ColumnPath> schemaR1Columns = createSchemaR1().getColumns().stream()
+        .map(x -> ColumnPath.get(x.getPath()))
+        .collect(Collectors.toSet());
+    Set<ColumnPath> schemaR2Columns = createSchemaR2().getColumns().stream()
+        .map(x -> ColumnPath.get(x.getPath()))
+        .collect(Collectors.toSet());
+    Set<ColumnPath> r1BloomFilters = outputBloomFilters.keySet().stream()
+        .filter(schemaR1Columns::contains)
+        .collect(Collectors.toSet());
+    Set<ColumnPath> r2withBloomFilters = outputBloomFilters.keySet().stream()
+        .filter(schemaR2Columns::contains)
+        .collect(Collectors.toSet());
+    Set<ColumnPath> rBloomFilters = Stream.concat(r1BloomFilters.stream(), r2withBloomFilters.stream())
+        .collect(Collectors.toSet());
+
+    // TODO potentially too many checks, might need to be split into multiple tests
+    validateColumnData(Collections.emptySet(), Collections.emptySet(), null); // Verify data
+    assertEquals(expectSchema, actualSchema); // Verify schema
+    validateCreatedBy(); // Verify original.created.by
+    assertEquals(inputBloomFilters.keySet(), rBloomFilters); // Verify bloom filters
+    verifyCodec( // Verify codec
+        outputFile,
+        new HashSet<CompressionCodecName>() {
+          {
+            add(CompressionCodecName.GZIP);
+            add(CompressionCodecName.UNCOMPRESSED);
+            add(CompressionCodecName.ZSTD);
+          }
+        },
+        null);
+    validatePageIndex(
+        new HashMap<Integer, Integer>() { // Verify page index
+          { // verifying only left side input columns
+            put(0, 0);
+            put(1, 1);
+            put(2, 2);
+            put(3, 4);
+          }
+        });
+  }
+
+  private void testThreeInputsDifferentRowGroupSize() throws IOException {
+    inputFiles = Lists.newArrayList(
+        new TestFileBuilder(conf, createSchemaL())
+            .withNumRecord(numRecord / 2)
+            .withRowGroupSize(5_000_000)
+            .withCodec("GZIP")
+            .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+            .withWriterVersion(writerVersion)
+            .build(),
+        new TestFileBuilder(conf, createSchemaL())
+            .withNumRecord(numRecord - (numRecord / 2))
+            .withRowGroupSize(6_000_000)
+            .withCodec("GZIP")
+            .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+            .withWriterVersion(writerVersion)
+            .build());
+    inputFilesToJoinColumns = Lists.newArrayList(Lists.newArrayList(
+        Lists.newArrayList(new TestFileBuilder(conf, createSchemaR1())
+            .withNumRecord(numRecord)
+            .withRowGroupSize(7_000_000)
+            .withCodec("ZSTD")
+            .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+            .withWriterVersion(writerVersion)
+            .withBloomFilterEnabled(new String[] {"Links.Forward"})
+            .build()),
+        Lists.newArrayList(
+            new TestFileBuilder(conf, createSchemaR2())
+                .withNumRecord(numRecord / 3)
+                .withRowGroupSize(200_000)
+                .withCodec("UNCOMPRESSED")
+                .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+                .withWriterVersion(writerVersion)
+                .build(),
+            new TestFileBuilder(conf, createSchemaR2())
+                .withNumRecord(numRecord / 3)
+                .withRowGroupSize(300_000)
+                .withCodec("UNCOMPRESSED")
+                .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+                .withWriterVersion(writerVersion)
+                .build(),
+            new TestFileBuilder(conf, createSchemaR2())
+                .withNumRecord(numRecord - 2 * (numRecord / 3))
+                .withRowGroupSize(400_000)
+                .withCodec("UNCOMPRESSED")
+                .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+                .withWriterVersion(writerVersion)
+                .build())));
+  }
+
   private MessageType createSchema() {
     return new MessageType(
         "schema",
@@ -738,6 +856,30 @@ public class ParquetRewriterTest {
             "Links",
             new PrimitiveType(REPEATED, BINARY, "Backward"),
             new PrimitiveType(REPEATED, BINARY, "Forward")));
+  }
+
+  private MessageType createSchemaL() {
+    return new MessageType(
+        "schema",
+        new PrimitiveType(OPTIONAL, INT64, "DocId"),
+        new PrimitiveType(REQUIRED, BINARY, "Name"),
+        new PrimitiveType(OPTIONAL, BINARY, "Gender"),
+        new PrimitiveType(REPEATED, FLOAT, "FloatFraction"),
+        new PrimitiveType(OPTIONAL, DOUBLE, "DoubleFraction"));
+  }
+
+  private MessageType createSchemaR1() {
+    return new MessageType(
+        "schema",
+        new GroupType(
+            OPTIONAL,
+            "Links",
+            new PrimitiveType(REPEATED, BINARY, "Backward"),
+            new PrimitiveType(REPEATED, BINARY, "Forward")));
+  }
+
+  private MessageType createSchemaR2() {
+    return new MessageType("schema", new PrimitiveType(REPEATED, FLOAT, "FloatFraction"));
   }
 
   private void validateColumnData(
@@ -754,38 +896,59 @@ public class ParquetRewriterTest {
       totalRows += inputFile.getFileContent().length;
     }
 
+    List<List<SimpleGroup>> fileContents = Stream.concat(Stream.of(inputFiles), inputFilesToJoinColumns.stream())
+        .map(x -> x.stream()
+            .flatMap(y -> Arrays.stream(y.getFileContent()))
+            .collect(Collectors.toList()))
+        .collect(Collectors.toList());
+    BiFunction<String, Integer, Group> groups = (name, rowIdx) -> {
+      for (int i = fileContents.size() - 1; i >= 0; i--) {
+        SimpleGroup expGroup = fileContents.get(i).get(rowIdx);
+        GroupType fileSchema = expGroup.getType();
+        if (fileSchema.containsField(name)) {
+          return expGroup;
+        }
+      }
+      throw new IllegalStateException(
+          "Group '" + name + "' at position " + rowIdx + " was not found in input files!");
+    };
     for (int i = 0; i < totalRows; i++) {
       Group group = reader.read();
       assertNotNull(group);
-
-      SimpleGroup expectGroup = inputFiles.get(i / numRecord).getFileContent()[i % numRecord];
 
       if (!prunePaths.contains("DocId")) {
         if (nullifiedPaths.contains("DocId")) {
           assertThrows(RuntimeException.class, () -> group.getLong("DocId", 0));
         } else {
-          assertEquals(group.getLong("DocId", 0), expectGroup.getLong("DocId", 0));
+          assertEquals(
+              group.getLong("DocId", 0), groups.apply("DocId", i).getLong("DocId", 0));
         }
       }
 
       if (!prunePaths.contains("Name") && !nullifiedPaths.contains("Name")) {
         assertArrayEquals(
             group.getBinary("Name", 0).getBytes(),
-            expectGroup.getBinary("Name", 0).getBytes());
+            groups.apply("Name", i).getBinary("Name", 0).getBytes());
       }
 
       if (!prunePaths.contains("Gender") && !nullifiedPaths.contains("Gender")) {
         assertArrayEquals(
             group.getBinary("Gender", 0).getBytes(),
-            expectGroup.getBinary("Gender", 0).getBytes());
+            groups.apply("Gender", i).getBinary("Gender", 0).getBytes());
       }
 
       if (!prunePaths.contains("FloatFraction") && !nullifiedPaths.contains("FloatFraction")) {
-        assertEquals(group.getFloat("FloatFraction", 0), expectGroup.getFloat("FloatFraction", 0), 0);
+        assertEquals(
+            group.getFloat("FloatFraction", 0),
+            groups.apply("FloatFraction", i).getFloat("FloatFraction", 0),
+            0);
       }
 
       if (!prunePaths.contains("DoubleFraction") && !nullifiedPaths.contains("DoubleFraction")) {
-        assertEquals(group.getDouble("DoubleFraction", 0), expectGroup.getDouble("DoubleFraction", 0), 0);
+        assertEquals(
+            group.getDouble("DoubleFraction", 0),
+            groups.apply("DoubleFraction", i).getDouble("DoubleFraction", 0),
+            0);
       }
 
       Group subGroup = group.getGroup("Links", 0);
@@ -793,7 +956,7 @@ public class ParquetRewriterTest {
       if (!prunePaths.contains("Links.Backward") && !nullifiedPaths.contains("Links.Backward")) {
         assertArrayEquals(
             subGroup.getBinary("Backward", 0).getBytes(),
-            expectGroup
+            groups.apply("Links", i)
                 .getGroup("Links", 0)
                 .getBinary("Backward", 0)
                 .getBytes());
@@ -805,7 +968,7 @@ public class ParquetRewriterTest {
         } else {
           assertArrayEquals(
               subGroup.getBinary("Forward", 0).getBytes(),
-              expectGroup
+              groups.apply("Links", i)
                   .getGroup("Links", 0)
                   .getBinary("Forward", 0)
                   .getBytes());
@@ -955,7 +1118,10 @@ public class ParquetRewriterTest {
 
   private void validateCreatedBy() throws Exception {
     Set<String> createdBySet = new HashSet<>();
-    for (EncryptionTestFile inputFile : inputFiles) {
+    List<EncryptionTestFile> inFiles = Stream.concat(
+            inputFiles.stream(), inputFilesToJoinColumns.stream().flatMap(Collection::stream))
+        .collect(Collectors.toList());
+    for (EncryptionTestFile inputFile : inFiles) {
       ParquetMetadata pmd = getFileMetaData(inputFile.getFileName(), null);
       createdBySet.add(pmd.getFileMetaData().getCreatedBy());
       assertNull(pmd.getFileMetaData().getKeyValueMetaData().get(ParquetRewriter.ORIGINAL_CREATED_BY_KEY));
@@ -998,7 +1164,10 @@ public class ParquetRewriterTest {
   private Map<ColumnPath, List<BloomFilter>> allInputBloomFilters(FileDecryptionProperties fileDecryptionProperties)
       throws Exception {
     Map<ColumnPath, List<BloomFilter>> inputBloomFilters = new HashMap<>();
-    for (EncryptionTestFile inputFile : inputFiles) {
+    List<EncryptionTestFile> files = Stream.concat(Stream.of(inputFiles), inputFilesToJoinColumns.stream())
+        .flatMap(Collection::stream)
+        .collect(Collectors.toList());
+    for (EncryptionTestFile inputFile : files) {
       Map<ColumnPath, List<BloomFilter>> bloomFilters =
           allBloomFilters(inputFile.getFileName(), fileDecryptionProperties);
       for (Map.Entry<ColumnPath, List<BloomFilter>> entry : bloomFilters.entrySet()) {
@@ -1042,16 +1211,23 @@ public class ParquetRewriterTest {
   }
 
   private RewriteOptions.Builder createBuilder(List<Path> inputPaths) throws IOException {
+    return createBuilder(inputPaths, new ArrayList<>());
+  }
+
+  private RewriteOptions.Builder createBuilder(List<Path> inputPathsL, List<List<Path>> inputPathsR)
+      throws IOException {
     RewriteOptions.Builder builder;
     if (usingHadoop) {
       Path outputPath = new Path(outputFile);
-      builder = new RewriteOptions.Builder(conf, inputPaths, outputPath);
+      builder = new RewriteOptions.Builder(conf, inputPathsL, outputPath);
+      inputPathsR.forEach(builder::addInputPathsR);
     } else {
       OutputFile outputPath = HadoopOutputFile.fromPath(new Path(outputFile), conf);
-      List<InputFile> inputs = inputPaths.stream()
+      List<InputFile> inputsL = inputPathsL.stream()
           .map(p -> HadoopInputFile.fromPathUnchecked(p, conf))
           .collect(Collectors.toList());
-      builder = new RewriteOptions.Builder(parquetConf, inputs, outputPath);
+      builder = new RewriteOptions.Builder(parquetConf, inputsL, outputPath);
+      inputPathsR.forEach(builder::addInputPathsR);
     }
     return builder;
   }
