@@ -20,6 +20,7 @@ package org.apache.parquet.hadoop;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
@@ -387,9 +388,8 @@ public class ParquetWriter<T> implements Closeable {
     // attached.
     if (encryptionProperties == null) {
       String path = file == null ? null : file.getPath();
-      Configuration hadoopConf = ConfigurationUtil.createHadoopConfiguration(conf);
-      encryptionProperties = ParquetOutputFormat.createEncryptionProperties(
-          hadoopConf, path == null ? null : new Path(path), writeContext);
+      encryptionProperties = EncryptionPropertiesHelper.createEncryptionProperties(
+          conf, path == null ? null : Paths.get(path), writeContext);
     }
 
     ParquetFileWriter fileWriter = new ParquetFileWriter(

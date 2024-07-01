@@ -20,6 +20,8 @@ package org.apache.parquet.crypto;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.parquet.conf.HadoopParquetConfiguration;
+import org.apache.parquet.conf.ParquetConfiguration;
 import org.apache.parquet.hadoop.BadConfigurationException;
 import org.apache.parquet.hadoop.api.WriteSupport.WriteContext;
 import org.apache.parquet.hadoop.util.ConfigurationUtil;
@@ -53,12 +55,25 @@ public interface EncryptionPropertiesFactory {
    * Load EncryptionPropertiesFactory class specified by CRYPTO_FACTORY_CLASS_PROPERTY_NAME as the path in the
    * configuration
    *
-   * @param conf Configuration where user specifies the class path
+   * @param conf Hadoop Configuration where user specifies the class path
    * @return object with class EncryptionPropertiesFactory if user specified the class path and invoking of
    * the class succeeds. Null if user doesn't specify the class path (no encryption then).
    * @throws BadConfigurationException if the instantiation of the configured class fails
    */
   static EncryptionPropertiesFactory loadFactory(Configuration conf) {
+    return loadFactory(new HadoopParquetConfiguration(conf));
+  }
+
+  /**
+   * Load EncryptionPropertiesFactory class specified by CRYPTO_FACTORY_CLASS_PROPERTY_NAME as the path in the
+   * configuration
+   *
+   * @param conf ParquetConfiguration where user specifies the class path
+   * @return object with class EncryptionPropertiesFactory if user specified the class path and invoking of
+   * the class succeeds. Null if user doesn't specify the class path (no encryption then).
+   * @throws BadConfigurationException if the instantiation of the configured class fails
+   */
+  static EncryptionPropertiesFactory loadFactory(ParquetConfiguration conf) {
     final Class<?> encryptionPropertiesFactoryClass = ConfigurationUtil.getClassFromConfig(
         conf, CRYPTO_FACTORY_CLASS_PROPERTY_NAME, EncryptionPropertiesFactory.class);
 
