@@ -66,6 +66,8 @@ public class ParquetProperties {
 
   public static final boolean DEFAULT_PAGE_WRITE_CHECKSUM_ENABLED = true;
 
+  public static final boolean DEFAULT_PAGE_PATH_OUTPUT_COMMITTER_ENABLED = false;
+
   public static final ValuesWriterFactory DEFAULT_VALUES_WRITER_FACTORY = new DefaultValuesWriterFactory();
 
   private static final int MIN_SLAB_SIZE = 64;

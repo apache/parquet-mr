@@ -20,6 +20,7 @@ package org.apache.parquet.hadoop;
 
 import static org.apache.parquet.column.ParquetProperties.DEFAULT_ADAPTIVE_BLOOM_FILTER_ENABLED;
 import static org.apache.parquet.column.ParquetProperties.DEFAULT_BLOOM_FILTER_ENABLED;
+import static org.apache.parquet.column.ParquetProperties.DEFAULT_PAGE_PATH_OUTPUT_COMMITTER_ENABLED;
 import static org.apache.parquet.hadoop.ParquetWriter.DEFAULT_BLOCK_SIZE;
 import static org.apache.parquet.hadoop.util.ContextUtil.getConfiguration;
 
@@ -98,7 +99,14 @@ import org.slf4j.LoggerFactory;
  * </pre>
  * <p>
  * if none of those is set the data is uncompressed.
- *
+ * <p>
+ * This class also generates the committer required to manifest the work in the
+ * destination directory if and when the job is committed.
+ * This has historically always created an instance of {@link ParquetOutputCommitter}.
+ * If {@link #PAGE_PATH_OUTPUT_COMMITTER_ENABLED} is true, the superclass is used
+ * to create the committer, which on Hadoop 3.1 and later involves the
+ * {@code PathOutputCommitterFactory} mechanism to dynamically choose a committer
+ * for the target filesystem. Such committers do not generated summary files.
  * @param <T> the type of the materialized records
  */
 public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
@@ -157,6 +165,13 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   public static final String BLOOM_FILTER_CANDIDATES_NUMBER = "parquet.bloom.filter.candidates.number";
   public static final String PAGE_ROW_COUNT_LIMIT = "parquet.page.row.count.limit";
   public static final String PAGE_WRITE_CHECKSUM_ENABLED = "parquet.page.write-checksum.enabled";
+
+  /**
+   * Use the output committer created by the superclass, rather than a {@link ParquetOutputCommitter}.
+   * This delivers correctness and scalability on cloud storage, but will not write schema files.
+   * Value: {@value}.
+   */
+  public static final String PAGE_PATH_OUTPUT_COMMITTER_ENABLED = "parquet.path.outputcommitter.enabled";
 
   public static JobSummaryLevel getJobSummaryLevel(Configuration conf) {
     String level = conf.get(JOB_SUMMARY_LEVEL);
@@ -390,7 +405,7 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   }
 
   private WriteSupport<T> writeSupport;
-  private ParquetOutputCommitter committer;
+  private OutputCommitter committer;
 
   /**
    * constructor used when this OutputFormat in wrapped in another one (In Pig for example)
@@ -555,7 +570,22 @@ public class ParquetOutputFormat<T> extends FileOutputFormat<Void, T> {
   public OutputCommitter getOutputCommitter(TaskAttemptContext context) throws IOException {
     if (committer == null) {
       Path output = getOutputPath(context);
-      committer = new ParquetOutputCommitter(output, context);
+      final Configuration conf = context.getConfiguration();
+      if (conf.getBoolean(PAGE_PATH_OUTPUT_COMMITTER_ENABLED, DEFAULT_PAGE_PATH_OUTPUT_COMMITTER_ENABLED)) {
+        // hand off creation of a committer to superclass.
+        // On hadoop 3.1+ this will use a factory mechanism to dynamically
+        // bind to a filesystem specific committer, an explict override
+        // or fall back to the classic FileOutputCommitter
+        committer = super.getOutputCommitter(context);
+        LOG.debug("Writing to {} with output committer {}", committer, output);
+
+        if (ParquetOutputFormat.getJobSummaryLevel(conf) != JobSummaryLevel.NONE) {
+          // warn if summary file generation has been requested, as they won't be created.
+          LOG.warn("Committer {} does not support summary files", committer);
+        }
+      } else {
+        committer = new ParquetOutputCommitter(output, context);
+      }
     }
     return committer;
   }
