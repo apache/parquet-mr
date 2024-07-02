@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +47,7 @@ public class MemoryManager {
 
   private final long totalMemoryPool;
   private final long minMemoryAllocation;
-  private final Map<InternalParquetRecordWriter<?>, Long> writerList = new HashMap<>();
+  private final Map<InternalParquetRecordWriter<?>, Long> writerList = new ConcurrentHashMap<>();
   private final Map<String, Runnable> callBacks = new HashMap<String, Runnable>();
   private double scale = 1.0;
 
@@ -74,7 +75,7 @@ public class MemoryManager {
    * @param writer     the new created writer
    * @param allocation the requested buffer size
    */
-  synchronized void addWriter(InternalParquetRecordWriter<?> writer, Long allocation) {
+  void addWriter(InternalParquetRecordWriter<?> writer, Long allocation) {
     Long oldValue = writerList.get(writer);
     if (oldValue == null) {
       writerList.put(writer, allocation);
@@ -92,7 +93,7 @@ public class MemoryManager {
    *
    * @param writer the writer that has been closed
    */
-  synchronized void removeWriter(InternalParquetRecordWriter<?> writer) {
+  void removeWriter(InternalParquetRecordWriter<?> writer) {
     writerList.remove(writer);
     if (!writerList.isEmpty()) {
       updateAllocation();
