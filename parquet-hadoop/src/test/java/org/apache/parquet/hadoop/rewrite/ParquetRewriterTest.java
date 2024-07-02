@@ -44,7 +44,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.HadoopReadOptions;
@@ -108,6 +110,7 @@ public class ParquetRewriterTest {
   private final boolean usingHadoop;
 
   private List<EncryptionTestFile> inputFiles = null;
+  private List<EncryptionTestFile> inputFilesToJoinColumns = null;
   private String outputFile = null;
   private ParquetRewriter rewriter = null;
 
@@ -175,6 +178,7 @@ public class ParquetRewriterTest {
   @Before
   public void setUp() {
     outputFile = TestFileBuilder.createTempFile("test");
+    inputFilesToJoinColumns = new ArrayList<>();
   }
 
   @Test
@@ -725,6 +729,77 @@ public class ParquetRewriterTest {
         .build());
   }
 
+  @Test
+  public void testStitchTwoInputs() throws Exception {
+    // todo add a case when a number of main input files and joined input files do not match
+    //  for that we need to have a capability of specifying the number of rows in the output file
+    //  right now a withRowGroupSize doesn't allow to strictly set a number of rows in a group
+    testTwoInputFileGroups();
+
+    List<Path> inputPathsL =
+        inputFiles.stream().map(x -> new Path(x.getFileName())).collect(Collectors.toList());
+    List<Path> inputPathsR = inputFilesToJoinColumns.stream()
+        .map(y -> new Path(y.getFileName()))
+        .collect(Collectors.toList());
+    RewriteOptions.Builder builder = createBuilder(inputPathsL, inputPathsR, true);
+    RewriteOptions options = builder.indexCacheStrategy(indexCacheStrategy).build();
+
+    rewriter = new ParquetRewriter(options);
+    rewriter.processBlocks();
+    rewriter.close();
+    MessageType actualSchema = ParquetFileReader.readFooter(
+            conf, new Path(outputFile), ParquetMetadataConverter.NO_FILTER)
+        .getFileMetaData()
+        .getSchema();
+    MessageType expectSchema = createSchema();
+
+    Map<ColumnPath, List<BloomFilter>> inputBloomFilters = allInputBloomFilters(null);
+    Map<ColumnPath, List<BloomFilter>> outputBloomFilters = allOutputBloomFilters(null);
+    Set<ColumnPath> schemaRColumns = createSchemaR().getColumns().stream()
+        .map(x -> ColumnPath.get(x.getPath()))
+        .collect(Collectors.toSet());
+    Set<ColumnPath> rBloomFilters = outputBloomFilters.keySet().stream()
+        .filter(schemaRColumns::contains)
+        .collect(Collectors.toSet());
+
+    // TODO potentially too many checks, might need to be split into multiple tests
+    validateColumnData(Collections.emptySet(), Collections.emptySet(), null, true); // Verify data
+    assertEquals(expectSchema, actualSchema); // Verify schema
+    validateCreatedBy(); // Verify original.created.by
+    assertEquals(inputBloomFilters.keySet(), rBloomFilters); // Verify bloom filters
+    verifyCodec( // Verify codec
+        outputFile,
+        new HashSet<CompressionCodecName>() {
+          {
+            add(CompressionCodecName.GZIP);
+            add(CompressionCodecName.UNCOMPRESSED);
+          }
+        },
+        null);
+    validatePageIndex(
+        new HashMap<Integer, Integer>() { // Verify page index
+          { // verifying only left side input columns
+            put(0, 0);
+            put(1, 1);
+            put(2, 2);
+            put(3, 4);
+          }
+        });
+  }
+
+  private void testTwoInputFileGroups() throws IOException {
+    inputFiles = Lists.newArrayList(new TestFileBuilder(conf, createSchemaL())
+        .withCodec("GZIP")
+        .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+        .withWriterVersion(writerVersion)
+        .build());
+    inputFilesToJoinColumns = Lists.newArrayList(new TestFileBuilder(conf, createSchemaR())
+        .withCodec("UNCOMPRESSED")
+        .withPageSize(ParquetProperties.DEFAULT_PAGE_SIZE)
+        .withWriterVersion(writerVersion)
+        .build());
+  }
+
   private MessageType createSchema() {
     return new MessageType(
         "schema",
@@ -740,52 +815,99 @@ public class ParquetRewriterTest {
             new PrimitiveType(REPEATED, BINARY, "Forward")));
   }
 
+  private MessageType createSchemaL() {
+    return new MessageType(
+        "schema",
+        new PrimitiveType(OPTIONAL, INT64, "DocId"),
+        new PrimitiveType(REQUIRED, BINARY, "Name"),
+        new PrimitiveType(OPTIONAL, BINARY, "Gender"),
+        new PrimitiveType(REPEATED, FLOAT, "FloatFraction"),
+        new PrimitiveType(OPTIONAL, DOUBLE, "DoubleFraction"));
+  }
+
+  private MessageType createSchemaR() {
+    return new MessageType(
+        "schema",
+        new PrimitiveType(REPEATED, FLOAT, "FloatFraction"),
+        new GroupType(
+            OPTIONAL,
+            "Links",
+            new PrimitiveType(REPEATED, BINARY, "Backward"),
+            new PrimitiveType(REPEATED, BINARY, "Forward")));
+  }
+
   private void validateColumnData(
       Set<String> prunePaths, Set<String> nullifiedPaths, FileDecryptionProperties fileDecryptionProperties)
+      throws IOException {
+    validateColumnData(prunePaths, nullifiedPaths, fileDecryptionProperties, false);
+  }
+
+  private void validateColumnData(
+      Set<String> prunePaths,
+      Set<String> nullifiedPaths,
+      FileDecryptionProperties fileDecryptionProperties,
+      Boolean joinColumnsOverwrite)
       throws IOException {
     ParquetReader<Group> reader = ParquetReader.builder(new GroupReadSupport(), new Path(outputFile))
         .withConf(conf)
         .withDecryption(fileDecryptionProperties)
         .build();
 
-    // Get total number of rows from input files
-    int totalRows = 0;
-    for (EncryptionTestFile inputFile : inputFiles) {
-      totalRows += inputFile.getFileContent().length;
-    }
+    List<SimpleGroup> filesMain = inputFiles.stream()
+        .flatMap(x -> Arrays.stream(x.getFileContent()))
+        .collect(Collectors.toList());
+    List<SimpleGroup> filesJoined = inputFilesToJoinColumns.stream()
+        .flatMap(x -> Arrays.stream(x.getFileContent()))
+        .collect(Collectors.toList());
+    BiFunction<String, Integer, Group> groups = (name, rowIdx) -> {
+      if (joinColumnsOverwrite
+          && !filesJoined.isEmpty()
+          && filesJoined.get(0).getType().containsField(name)) {
+        return filesJoined.get(rowIdx);
+      } else {
+        return filesMain.get(rowIdx);
+      }
+    };
 
+    int totalRows =
+        inputFiles.stream().mapToInt(x -> x.getFileContent().length).sum();
     for (int i = 0; i < totalRows; i++) {
       Group group = reader.read();
       assertNotNull(group);
-
-      SimpleGroup expectGroup = inputFiles.get(i / numRecord).getFileContent()[i % numRecord];
 
       if (!prunePaths.contains("DocId")) {
         if (nullifiedPaths.contains("DocId")) {
           assertThrows(RuntimeException.class, () -> group.getLong("DocId", 0));
         } else {
-          assertEquals(group.getLong("DocId", 0), expectGroup.getLong("DocId", 0));
+          assertEquals(
+              group.getLong("DocId", 0), groups.apply("DocId", i).getLong("DocId", 0));
         }
       }
 
       if (!prunePaths.contains("Name") && !nullifiedPaths.contains("Name")) {
         assertArrayEquals(
             group.getBinary("Name", 0).getBytes(),
-            expectGroup.getBinary("Name", 0).getBytes());
+            groups.apply("Name", i).getBinary("Name", 0).getBytes());
       }
 
       if (!prunePaths.contains("Gender") && !nullifiedPaths.contains("Gender")) {
         assertArrayEquals(
             group.getBinary("Gender", 0).getBytes(),
-            expectGroup.getBinary("Gender", 0).getBytes());
+            groups.apply("Gender", i).getBinary("Gender", 0).getBytes());
       }
 
       if (!prunePaths.contains("FloatFraction") && !nullifiedPaths.contains("FloatFraction")) {
-        assertEquals(group.getFloat("FloatFraction", 0), expectGroup.getFloat("FloatFraction", 0), 0);
+        assertEquals(
+            group.getFloat("FloatFraction", 0),
+            groups.apply("FloatFraction", i).getFloat("FloatFraction", 0),
+            0);
       }
 
       if (!prunePaths.contains("DoubleFraction") && !nullifiedPaths.contains("DoubleFraction")) {
-        assertEquals(group.getDouble("DoubleFraction", 0), expectGroup.getDouble("DoubleFraction", 0), 0);
+        assertEquals(
+            group.getDouble("DoubleFraction", 0),
+            groups.apply("DoubleFraction", i).getDouble("DoubleFraction", 0),
+            0);
       }
 
       Group subGroup = group.getGroup("Links", 0);
@@ -793,7 +915,7 @@ public class ParquetRewriterTest {
       if (!prunePaths.contains("Links.Backward") && !nullifiedPaths.contains("Links.Backward")) {
         assertArrayEquals(
             subGroup.getBinary("Backward", 0).getBytes(),
-            expectGroup
+            groups.apply("Links", i)
                 .getGroup("Links", 0)
                 .getBinary("Backward", 0)
                 .getBytes());
@@ -805,7 +927,7 @@ public class ParquetRewriterTest {
         } else {
           assertArrayEquals(
               subGroup.getBinary("Forward", 0).getBytes(),
-              expectGroup
+              groups.apply("Links", i)
                   .getGroup("Links", 0)
                   .getBinary("Forward", 0)
                   .getBytes());
@@ -955,7 +1077,9 @@ public class ParquetRewriterTest {
 
   private void validateCreatedBy() throws Exception {
     Set<String> createdBySet = new HashSet<>();
-    for (EncryptionTestFile inputFile : inputFiles) {
+    List<EncryptionTestFile> inFiles = Stream.concat(inputFiles.stream(), inputFilesToJoinColumns.stream())
+        .collect(Collectors.toList());
+    for (EncryptionTestFile inputFile : inFiles) {
       ParquetMetadata pmd = getFileMetaData(inputFile.getFileName(), null);
       createdBySet.add(pmd.getFileMetaData().getCreatedBy());
       assertNull(pmd.getFileMetaData().getKeyValueMetaData().get(ParquetRewriter.ORIGINAL_CREATED_BY_KEY));
@@ -998,7 +1122,9 @@ public class ParquetRewriterTest {
   private Map<ColumnPath, List<BloomFilter>> allInputBloomFilters(FileDecryptionProperties fileDecryptionProperties)
       throws Exception {
     Map<ColumnPath, List<BloomFilter>> inputBloomFilters = new HashMap<>();
-    for (EncryptionTestFile inputFile : inputFiles) {
+    List<EncryptionTestFile> files = Stream.concat(inputFiles.stream(), inputFilesToJoinColumns.stream())
+        .collect(Collectors.toList());
+    for (EncryptionTestFile inputFile : files) {
       Map<ColumnPath, List<BloomFilter>> bloomFilters =
           allBloomFilters(inputFile.getFileName(), fileDecryptionProperties);
       for (Map.Entry<ColumnPath, List<BloomFilter>> entry : bloomFilters.entrySet()) {
@@ -1042,17 +1168,26 @@ public class ParquetRewriterTest {
   }
 
   private RewriteOptions.Builder createBuilder(List<Path> inputPaths) throws IOException {
+    return createBuilder(inputPaths, new ArrayList<>(), false);
+  }
+
+  private RewriteOptions.Builder createBuilder(
+      List<Path> inputPathsL, List<Path> inputPathsR, boolean joinColumnsOverwrite) throws IOException {
     RewriteOptions.Builder builder;
     if (usingHadoop) {
       Path outputPath = new Path(outputFile);
-      builder = new RewriteOptions.Builder(conf, inputPaths, outputPath);
+      builder = new RewriteOptions.Builder(conf, inputPathsL, inputPathsR, outputPath);
     } else {
       OutputFile outputPath = HadoopOutputFile.fromPath(new Path(outputFile), conf);
-      List<InputFile> inputs = inputPaths.stream()
+      List<InputFile> inputsL = inputPathsL.stream()
           .map(p -> HadoopInputFile.fromPathUnchecked(p, conf))
           .collect(Collectors.toList());
-      builder = new RewriteOptions.Builder(parquetConf, inputs, outputPath);
+      List<InputFile> inputsR = inputPathsR.stream()
+          .map(p -> HadoopInputFile.fromPathUnchecked(p, conf))
+          .collect(Collectors.toList());
+      builder = new RewriteOptions.Builder(parquetConf, inputsL, inputsR, outputPath);
     }
+    builder.joinColumnsOverwrite(joinColumnsOverwrite);
     return builder;
   }
 
