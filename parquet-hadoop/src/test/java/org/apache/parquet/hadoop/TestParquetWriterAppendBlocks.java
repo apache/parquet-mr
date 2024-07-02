@@ -36,6 +36,7 @@ import java.util.UUID;
 import java.util.concurrent.Callable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.Preconditions;
 import org.apache.parquet.example.data.Group;
@@ -324,6 +325,45 @@ public class TestParquetWriterAppendBlocks {
           writer.appendFile(CONF, file1);
           return null;
         });
+  }
+
+  @Test
+  public void testCloseParquetFileReaderOpenByWriter() throws IOException {
+    Path file1 = newTemp();
+    Path file2 = newTemp();
+
+    ParquetWriter<Group> writer1 =
+        ExampleParquetWriter.builder(file1).withType(FILE_SCHEMA).build();
+    ParquetWriter<Group> writer2 =
+        ExampleParquetWriter.builder(file2).withType(FILE_SCHEMA).build();
+
+    for (int i = 0; i < FILE_SIZE; i += 1) {
+      Group group1 = GROUP_FACTORY.newGroup();
+      group1.add("id", i);
+      group1.add("string", UUID.randomUUID().toString());
+      writer1.write(group1);
+
+      Group group2 = GROUP_FACTORY.newGroup();
+      group2.add("id", FILE_SIZE + i);
+      group2.add("string", UUID.randomUUID().toString());
+      writer2.write(group2);
+    }
+
+    writer1.close();
+    writer2.close();
+
+    MessageType droppedColumnSchema =
+        Types.buildMessage().required(BINARY).as(UTF8).named("string").named("AppendTest");
+
+    Path droppedColumnFile = newTemp();
+    ParquetFileWriter writer = new ParquetFileWriter(CONF, droppedColumnSchema, droppedColumnFile);
+    writer.start();
+    writer.appendFile(CONF, file1);
+    writer.appendFile(CONF, file2);
+    writer.end(EMPTY_METADATA);
+    FileSystem fs = FileSystem.get(new Configuration());
+    Assert.assertTrue(fs.delete(file1));
+    Assert.assertTrue(fs.delete(file2));
   }
 
   private Path newTemp() throws IOException {

@@ -124,6 +124,9 @@ public class ParquetFileWriter implements AutoCloseable {
   private final AlignmentStrategy alignment;
   private final int columnIndexTruncateLength;
 
+  // file reader
+  private final List<ParquetFileReader> readers = new ArrayList<>();
+
   // file data
   private final List<BlockMetaData> blocks = new ArrayList<BlockMetaData>();
 
@@ -1433,12 +1436,14 @@ public class ParquetFileWriter implements AutoCloseable {
   public void appendFile(Configuration conf, Path file) throws IOException {
     try (ParquetFileReader reader = ParquetFileReader.open(conf, file)) {
       reader.appendTo(this);
+      readers.add(reader);
     }
   }
 
   public void appendFile(InputFile file) throws IOException {
     try (ParquetFileReader reader = ParquetFileReader.open(file)) {
       reader.appendTo(this);
+      readers.add(reader);
     }
   }
 
@@ -1662,6 +1667,9 @@ public class ParquetFileWriter implements AutoCloseable {
       temp.flush();
       if (crcAllocator != null) {
         crcAllocator.close();
+      }
+      for (ParquetFileReader reader : readers) {
+        reader.close();
       }
     }
   }
