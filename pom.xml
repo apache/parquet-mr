@@ -69,10 +69,9 @@
     <jackson.package>com.fasterxml.jackson</jackson.package>
     <jackson.version>2.17.1</jackson.version>
     <jackson-databind.version>2.17.1</jackson-databind.version>
-    <jackson-modules-java8.version>2.17.1</jackson-modules-java8.version>
     <japicmp.version>0.21.0</japicmp.version>
     <javax.annotation.version>1.3.2</javax.annotation.version>
-    <spotless.version>2.30.0</spotless.version>
+    <spotless.version>2.43.0</spotless.version>
     <shade.prefix>shaded.parquet</shade.prefix>
     <hadoop.version>3.3.6</hadoop.version>
     <parquet.format.version>2.10.0</parquet.format.version>

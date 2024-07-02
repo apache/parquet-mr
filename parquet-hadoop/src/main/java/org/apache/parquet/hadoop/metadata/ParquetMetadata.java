@@ -20,28 +20,18 @@ package org.apache.parquet.hadoop.metadata;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.List;
 
 /**
- * Meta Data block stored in the footer of the file
+ * Metadata block stored in the footer of the file
  * contains file level (Codec, Schema, ...) and block level (location, columns, record count, ...) meta data
  */
 public class ParquetMetadata {
 
   private static final ObjectMapper objectMapper = new ObjectMapper();
-
-  static {
-    // Enable FAIL_ON_EMPTY_BEANS on objectmapper. Without this feature parquet-casdacing tests fail,
-    // because LogicalTypeAnnotation implementations are classes without any property.
-    objectMapper.disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
-    // Add support for Java 8 Optional
-    objectMapper.registerModule(new Jdk8Module());
-  }
 
   /**
    * @param parquetMetaData an instance of parquet metadata to convert

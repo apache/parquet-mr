@@ -129,11 +129,6 @@
       <version>${jackson-databind.version}</version>
     </dependency>
     <dependency>
-      <groupId>${jackson.datatype.groupId}</groupId>
-      <artifactId>jackson-datatype-jdk8</artifactId>
-      <version>${jackson-modules-java8.version}</version>
-    </dependency>
-    <dependency>
       <groupId>org.xerial.snappy</groupId>
       <artifactId>snappy-java</artifactId>
       <version>1.1.10.5</version>

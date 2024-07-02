@@ -48,12 +48,6 @@
       <artifactId>jackson-databind</artifactId>
       <version>${jackson-databind.version}</version>
     </dependency>
-    <!-- Add support for Java 8 Optional -->
-    <dependency>
-      <groupId>com.fasterxml.jackson.datatype</groupId>
-      <artifactId>jackson-datatype-jdk8</artifactId>
-      <version>${jackson-modules-java8.version}</version>
-    </dependency>
   </dependencies>
 
   <properties>
